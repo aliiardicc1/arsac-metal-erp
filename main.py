@@ -6,10 +6,12 @@ from PyQt5.QtGui import QPixmap
 SURUM = "1.0.0"
 UPDATER_VAR = False
 try:
-    from updater import guncelleme_kontrol, SURUM
+    import updater as _upd
+    guncelleme_kontrol = _upd.guncelleme_kontrol
+    SURUM = _upd.SURUM
     UPDATER_VAR = True
 except Exception:
-    pass
+    def guncelleme_kontrol(parent=None, sessiz=True): pass
 
 if getattr(sys, 'frozen', False):
     CALISMA_DIZIN = os.path.dirname(sys.executable)
