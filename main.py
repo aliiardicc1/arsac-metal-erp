@@ -66,7 +66,8 @@ class ArsacMetalApp(QWidget):
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
-        self.setWindowTitle('ARSAC METAL ERP v{} - [{}]'.format(SURUM if UPDATER_VAR else '1.0.0', 'YÖNETİCİ' if self.user_role == 'yonetici' else 'PERSONEL'))
+        import updater as _u; _surum = getattr(_u, 'SURUM', '1.0.0')
+        self.setWindowTitle('ARSAC METAL ERP v{} - [{}]'.format(_surum, 'YÖNETİCİ' if self.user_role == 'yonetici' else 'PERSONEL'))
         self.setGeometry(50, 50, 1500, 900)
 
         self.setStyleSheet("""
@@ -241,8 +242,7 @@ class ArsacMetalApp(QWidget):
         admin_menu.addSeparator()
         # Versiyon bilgisi
         try:
-            from updater import SURUM
-            _v = SURUM
+            import updater as _u2; _v = getattr(_u2, "SURUM", "1.0.0")
         except:
             _v = "1.0.0"
         act_guncelle = admin_menu.addAction("🔄  Güncelleme Kontrol Et  (v{})".format(_v))
