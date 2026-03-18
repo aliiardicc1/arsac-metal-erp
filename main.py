@@ -3,12 +3,13 @@ from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
 
+SURUM = "1.0.0"
+UPDATER_VAR = False
 try:
     from updater import guncelleme_kontrol, SURUM
     UPDATER_VAR = True
-except ImportError:
-    UPDATER_VAR = False
-    SURUM = "1.0.0"
+except Exception:
+    pass
 
 if getattr(sys, 'frozen', False):
     CALISMA_DIZIN = os.path.dirname(sys.executable)
