@@ -12,6 +12,7 @@
     "kritik_esik": 500,
     "uyari_esik": 2000,
     "max_tonaj": 28000
+    
   },
   "yedekleme": {
     "gun_sayisi": 7,
@@ -38,4 +39,4 @@
   "is_klasor_yolu": "Z:\\2026\\ISLER",
   "metalix_exe": "C:\\Program Files\\Metalix\\CIM-CNC\\CIM-CNC.exe",
   "db_yolu": "C:\\Users\\PC\\Desktop\\Arsac_App\\arsac_metal.db"
-}
+}"
