@@ -257,6 +257,46 @@ class AyarlarDialog(QDialog):
         self._form_satir(form_kl, "Yedekler:",          self.e_yedek_kl)
         lay.addWidget(grp_kl)
 
+        # ── Veritabanı Yolu ──
+        from database import db_yolu_al, db_yolu_kaydet
+        grp_db = QGroupBox("Veritabani Baglantisi")
+        form_db = QFormLayout(grp_db)
+        form_db.setSpacing(10)
+
+        db_satir = QHBoxLayout()
+        self.e_db_yolu = self._le(db_yolu_al())
+        self.e_db_yolu.setPlaceholderText(r"Ornek: \\SUNUCU\ArsacDB\arsac_metal.db")
+        self.e_db_yolu.setMinimumWidth(340)
+
+        btn_db_sec = QPushButton("...")
+        btn_db_sec.setFixedSize(32, 32)
+        btn_db_sec.setToolTip("Dosya sec")
+        btn_db_sec.setStyleSheet(
+            "background:#c0392b;color:white;border-radius:6px;"
+            "font-weight:bold;border:none;")
+        btn_db_sec.clicked.connect(self._db_yolu_sec)
+
+        btn_db_test = QPushButton("Baglanti Test Et")
+        btn_db_test.setFixedHeight(32)
+        btn_db_test.setStyleSheet(
+            "background:#27ae60;color:white;border-radius:6px;"
+            "padding:4px 12px;font-weight:bold;border:none;")
+        btn_db_test.clicked.connect(self._db_test)
+
+        db_satir.addWidget(self.e_db_yolu)
+        db_satir.addWidget(btn_db_sec)
+        db_satir.addWidget(btn_db_test)
+
+        db_uyari = QLabel(
+            "Degistirince programi yeniden baslatmaniz gerekir. "
+            "Ag yolu icin: \\\\SUNUCU\\ArsacDB\\arsac_metal.db")
+        db_uyari.setWordWrap(True)
+        db_uyari.setStyleSheet("color:#e67e22;font-size:11px;")
+
+        form_db.addRow("DB Yolu:", db_satir)
+        form_db.addRow("", db_uyari)
+        lay.addWidget(grp_db)
+
         # PDF rapor içerik ayarları
         grp_pdf = QGroupBox("PDF Rapor Ayarlari")
         form_pdf = QFormLayout(grp_pdf)
@@ -373,6 +413,30 @@ class AyarlarDialog(QDialog):
         try: os.startfile(klasor)
         except: QMessageBox.information(self, "Bilgi", os.path.abspath(klasor))
 
+    def _db_yolu_sec(self):
+        from PyQt5.QtWidgets import QFileDialog
+        yol, _ = QFileDialog.getOpenFileName(
+            self, "Veritabani Dosyasi Sec", "",
+            "SQLite DB (*.db);;Tum Dosyalar (*)")
+        if yol:
+            self.e_db_yolu.setText(yol)
+
+    def _db_test(self):
+        import sqlite3
+        yol = self.e_db_yolu.text().strip()
+        if not yol:
+            QMessageBox.warning(self, "Hata", "DB yolu bos!"); return
+        try:
+            conn = sqlite3.connect(yol, timeout=5)
+            conn.execute("SELECT COUNT(*) FROM kullanicilar")
+            conn.close()
+            QMessageBox.information(self, "Basarili",
+                "Baglanti basarili!\nDB yolu gecerli ve erislebilir.")
+        except Exception as e:
+            QMessageBox.critical(self, "Baglanti Hatasi",
+                "Baglanti kurulamadi:\n{}\n\n"
+                "Ag yolu icin sunucunun acik olduguna emin olun.".format(e))
+
     def kaydet(self):
         self.ayarlar["firma"]["ad"]              = self.e_firma_ad.text()
         self.ayarlar["firma"]["unvan"]           = self.e_firma_unvan.text()
@@ -410,6 +474,12 @@ class AyarlarDialog(QDialog):
             "auto_ac":          self.chk_pdf_auto_ac.isChecked(),
             "ana_renk":         renk_list[self.cmb_pdf_renk.currentIndex()],
         }
+
+        # DB yolu kaydet
+        yeni_db = self.e_db_yolu.text().strip()
+        if yeni_db:
+            from database import db_yolu_kaydet
+            db_yolu_kaydet(yeni_db)
 
         if ayar_kaydet(self.ayarlar):
             QMessageBox.information(self, "✅ Kaydedildi",
