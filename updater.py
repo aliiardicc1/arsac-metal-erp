@@ -50,6 +50,9 @@ except ImportError:
 # GitHub kullanıcı adı / repo adı
 GITHUB_REPO   = "aliiardicc1/arsac-metal-erp"
 
+# Token ayarlar.json'dan okunur — koda yazmayın!
+GITHUB_TOKEN  = ""
+
 # Release'deki EXE dosyasının adı (tam olarak)
 EXE_ADI       = "ArsacMetalERP.exe"
 
@@ -88,10 +91,27 @@ def github_son_surum_bilgi(repo=GITHUB_REPO, zaman_asimi=8):
         return None
     try:
         api_url = "https://api.github.com/repos/{}/releases/latest".format(repo)
-        req = urlreq.Request(api_url, headers={
-            "User-Agent"  : "ArsacMetalERP/{}".format(SURUM),
-            "Accept"      : "application/vnd.github.v3+json",
-        })
+        # Token önce ayarlar.json'dan, sonra sabitten okunur
+        _token = GITHUB_TOKEN
+        if not _token:
+            try:
+                import json as _json, os as _os, sys as _sys
+                if getattr(_sys, 'frozen', False):
+                    _ayar_yol = _os.path.join(_os.path.dirname(_sys.executable), "ayarlar.json")
+                else:
+                    _ayar_yol = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "ayarlar.json")
+                with open(_ayar_yol, "r", encoding="utf-8") as _f:
+                    _token = _json.load(_f).get("github_token", "")
+            except:
+                pass
+
+        hdrs = {
+            "User-Agent": "ArsacMetalERP/{}".format(SURUM),
+            "Accept"    : "application/vnd.github.v3+json",
+        }
+        if _token:
+            hdrs["Authorization"] = "token {}".format(_token)
+        req = urlreq.Request(api_url, headers=hdrs)
         with urlreq.urlopen(req, timeout=zaman_asimi) as r:
             veri = json.loads(r.read().decode("utf-8"))
 
