@@ -10,6 +10,7 @@ Arsac Metal ERP — Veritabanı Altyapısı
 """
 
 import sqlite3
+import time
 import sys
 import os
 import json
@@ -599,16 +600,28 @@ def baglanti_kur():
     if klasor and not os.path.exists(klasor):
         os.makedirs(klasor, exist_ok=True)
 
-    conn = sqlite3.connect(yol, timeout=30, check_same_thread=False)
+    # Ağ DB için retry mekanizması — kilitli ise 5 kez dener
+    conn = None
+    for deneme in range(5):
+        try:
+            conn = sqlite3.connect(yol, timeout=60, check_same_thread=False)
+            break
+        except sqlite3.OperationalError:
+            if deneme < 4:
+                time.sleep(2)
+            else:
+                raise
+
     cursor = conn.cursor()
 
-    # ── SQLite performans ayarları ──
-    cursor.execute("PRAGMA journal_mode=WAL")
+    # ── SQLite performans ayarları (ağ klasörü için optimize) ──
+    try: cursor.execute("PRAGMA journal_mode=WAL")
+    except: cursor.execute("PRAGMA journal_mode=DELETE")  # ağda WAL sorun çıkarırsa
     cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA busy_timeout=15000")
-    cursor.execute("PRAGMA cache_size=20000")
-    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=30000")   # 30 sn bekle
+    cursor.execute("PRAGMA cache_size=5000")      # ağda az cache
     cursor.execute("PRAGMA temp_store=MEMORY")
+    cursor.execute("PRAGMA locking_mode=NORMAL")  # ağda EXCLUSIVE kullanma
     conn.commit()
 
     # ── Şema oluştur ──
