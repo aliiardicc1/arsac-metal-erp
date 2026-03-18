@@ -238,8 +238,8 @@ class ArsacMetalApp(QWidget):
         admin_menu.addSeparator()
         # Versiyon bilgisi
         try:
-            from guncelleme import mevcut_surumu_al
-            _v = mevcut_surumu_al()
+            from updater import SURUM
+            _v = SURUM
         except:
             _v = "1.0.0"
         act_guncelle = admin_menu.addAction("🔄  Güncelleme Kontrol Et  (v{})".format(_v))
@@ -484,8 +484,8 @@ class ArsacMetalApp(QWidget):
 
     def _guncelleme_kontrol(self):
         try:
-            from guncelleme import guncelleme_kontrol_et
-            guncelleme_kontrol_et(parent=self, sessiz=False)
+            from updater import guncelleme_kontrol
+            guncelleme_kontrol(parent=self, sessiz=False)
         except Exception as e:
             QMessageBox.warning(self, "Güncelleme",
                 "Güncelleme modülü yüklenemedi:\n{}".format(e))
@@ -613,11 +613,11 @@ if __name__ == '__main__':
 
     # ── Güncelleme kontrolü (arka planda, sessiz) ──
     try:
-        from guncelleme import guncelleme_kontrol_et
+        from updater import guncelleme_kontrol
         _guncelleme_timer = QTimer()
         _guncelleme_timer.setSingleShot(True)
-        _guncelleme_timer.timeout.connect(lambda: guncelleme_kontrol_et(parent=None, sessiz=True))
-        _guncelleme_timer.start(3000)  # 3 sn sonra kontrol et (login beklenmeden)
+        _guncelleme_timer.timeout.connect(lambda: guncelleme_kontrol(parent=None, sessiz=True))
+        _guncelleme_timer.start(4000)
     except Exception as _ge:
         print("[Güncelleme] Modül yüklenemedi:", _ge)
 
