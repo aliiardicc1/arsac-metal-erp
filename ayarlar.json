@@ -1,42 +1,5 @@
 {
-  "firma": {
-    "ad": "ARSAC METAL",
-    "unvan": "Arsac Oksijen Plazma Lazer Kesim Demir Celik Metal San. ve Tic. Ltd. Sti.",
-    "telefon": "",
-    "email": "",
-    "adres": "",
-    "vergi_no": "",
-    "vergi_dairesi": ""
-  },
-  "stok": {
-    "kritik_esik": 500,
-    "uyari_esik": 2000,
-    "max_tonaj": 28000
-    
-  },
-  "yedekleme": {
-    "gun_sayisi": 7,
-    "aktif": true
-  },
-  "pdf": {
-    "siparis_klasor": "Satin Alma Belgeleri",
-    "teklif_klasor": "Teklifler",
-    "rapor_klasor": "Gunluk Raporlar",
-    "yedek_klasor": "Yedekler"
-  },
-  "bildirim": {
-    "vade_gecmis": true,
-    "bugun_vadeli": true,
-    "kritik_stok": true,
-    "bekleyen_talep": true,
-    "yolda_sac": true,
-    "acilis_popup": true
-  },
-  "genel": {
-    "para_birimi": "TL",
-    "tarih_format": "%d.%m.%Y"
-  },
-  "is_klasor_yolu": "Z:\\2026\\ISLER",
-  "metalix_exe": "C:\\Program Files\\Metalix\\CIM-CNC\\CIM-CNC.exe",
-  "db_yolu": "C:\\Users\\PC\\Desktop\\Arsac_App\\arsac_metal.db"
-}"
+  "bulut_modu": true,
+  "api_url": "http://213.159.6.166:8000",
+  "db_yolu": ""
+}
