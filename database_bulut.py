@@ -3,10 +3,7 @@ Arsac Metal ERP — Bulut API İstemcisi
 ======================================
 database.py ile aynı arayüzü sunar.
 Arkada FastAPI sunucusuna HTTP istekleri atar.
-
-Kullanım:
-    from database_bulut import baglanti_kur, izin_yukle, izin_var
-    conn, cursor = baglanti_kur()
+BulutCursor tüm SQL sorgularını /sorgu endpoint'ine iletir.
 """
 
 import json
@@ -18,8 +15,8 @@ from datetime import datetime
 # ═══════════════════════════════════════════════════════════════
 #  AYARLAR
 # ═══════════════════════════════════════════════════════════════
-API_URL   = "http://213.159.6.166:8000"
-_token    = None
+API_URL    = "http://213.159.6.166:8000"
+_token     = None
 _kullanici = None
 
 
@@ -31,115 +28,140 @@ def _sifre_hash(sifre):
 #  HTTP YARDIMCILARI
 # ═══════════════════════════════════════════════════════════════
 def _istek(method, endpoint, veri=None):
-    url = API_URL + endpoint
-    body = json.dumps(veri).encode("utf-8") if veri else None
+    url  = API_URL + endpoint
+    body = json.dumps(veri).encode("utf-8") if veri is not None else None
     hdrs = {"Content-Type": "application/json"}
     if _token:
         hdrs["Authorization"] = "Bearer " + _token
 
     req = urlreq.Request(url, data=body, headers=hdrs, method=method)
     try:
-        with urlreq.urlopen(req, timeout=10) as r:
+        with urlreq.urlopen(req, timeout=15) as r:
             return json.loads(r.read().decode("utf-8"))
     except urlerr.HTTPError as e:
-        hata = json.loads(e.read().decode("utf-8"))
-        raise Exception(hata.get("detail", str(e)))
+        try:
+            hata = json.loads(e.read().decode("utf-8"))
+            raise Exception(hata.get("detail", str(e)))
+        except:
+            raise Exception("HTTP {}: {}".format(e.code, e.reason))
     except Exception as e:
         raise Exception("API bağlantı hatası: {}".format(e))
 
 
-def _get(endpoint):   return _istek("GET",  endpoint)
+def _get(endpoint):        return _istek("GET",  endpoint)
 def _post(endpoint, veri): return _istek("POST", endpoint, veri)
 def _put(endpoint, veri):  return _istek("PUT",  endpoint, veri)
 
 
 # ═══════════════════════════════════════════════════════════════
-#  SAHTE CURSOR / CONN  (database.py uyumluluğu için)
+#  BULUT CURSOR — tüm SQL sorgularını API'ye iletir
 # ═══════════════════════════════════════════════════════════════
 class BulutCursor:
+    """
+    SQLite cursor ile birebir aynı arayüz.
+    Her execute() çağrısını /sorgu endpoint'ine gönderir.
+    Modüllere hiç dokunmadan çalışır.
+    """
     def __init__(self):
-        self._sonuc = []
-        self._tek   = None
+        self._rows    = []
+        self._rowcount = 0
+        self.lastrowid = None
 
     def execute(self, sql, params=()):
-        sql_lower = sql.lower().strip()
+        try:
+            sonuc = _post("/sorgu", {
+                "sql":    sql,
+                "params": list(params)
+            })
+            self._rows     = sonuc.get("rows", [])
+            self._rowcount = sonuc.get("rowcount", 0)
+            self.lastrowid = sonuc.get("lastrowid", None)
+        except Exception as e:
+            print("[BulutCursor] Sorgu hatası:", e)
+            print("  SQL:", sql[:120])
+            self._rows     = []
+            self._rowcount = 0
 
-        if "from kullanicilar" in sql_lower and "select" in sql_lower:
-            try:
-                self._sonuc = [dict(r) for r in _get("/kullanicilar_hepsi")]
-            except:
-                self._sonuc = []
-
-        elif "from stok" in sql_lower and "select" in sql_lower:
-            try:
-                self._sonuc = [dict(r) for r in _get("/stok")]
-            except:
-                self._sonuc = []
-
-        elif "from siparisler" in sql_lower and "select" in sql_lower:
-            try:
-                self._sonuc = [dict(r) for r in _get("/siparisler")]
-            except:
-                self._sonuc = []
-
-        elif "from musteriler" in sql_lower and "select" in sql_lower:
-            try:
-                self._sonuc = [dict(r) for r in _get("/musteriler")]
-            except:
-                self._sonuc = []
-
-        elif "from isler" in sql_lower and "select" in sql_lower:
-            try:
-                self._sonuc = [dict(r) for r in _get("/isler")]
-            except:
-                self._sonuc = []
-
-        elif "from sevkiyatlar" in sql_lower and "select" in sql_lower:
-            try:
-                self._sonuc = [dict(r) for r in _get("/sevkiyatlar")]
-            except:
-                self._sonuc = []
-
-        elif "count(*)" in sql_lower:
-            try:
-                ozet = _get("/ozet")
-                if "from siparisler" in sql_lower:
-                    self._tek = (ozet.get("toplam_siparis", 0),)
-                elif "from stok" in sql_lower:
-                    self._tek = (ozet.get("toplam_stok_kalemi", 0),)
-                elif "from musteriler" in sql_lower:
-                    self._tek = (ozet.get("toplam_musteri", 0),)
-                elif "from isler" in sql_lower:
-                    self._tek = (ozet.get("toplam_is", 0),)
-                else:
-                    self._tek = (0,)
-            except:
-                self._tek = (0,)
-        else:
-            self._sonuc = []
+    def executemany(self, sql, param_list):
+        for params in param_list:
+            self.execute(sql, params)
 
     def fetchall(self):
-        return self._sonuc
+        rows = self._rows
+        # Modüller tuple bekliyorsa dict değerleri tuple'a çevir
+        return [_dict_to_row(r) for r in rows]
 
     def fetchone(self):
-        if self._tek is not None:
-            t = self._tek
-            self._tek = None
-            return t
-        return self._sonuc[0] if self._sonuc else None
+        if not self._rows:
+            return None
+        return _dict_to_row(self._rows[0])
 
     def __iter__(self):
-        return iter(self._sonuc)
+        return iter(self.fetchall())
+
+    @property
+    def rowcount(self):
+        return self._rowcount
+
+
+def _dict_to_row(r):
+    """
+    Dict satırını DictRow gibi hem index hem key ile erişilebilir yapar.
+    Modüller row[0], row['alan'] veya row.get() kullanabilir.
+    """
+    if isinstance(r, dict):
+        return _SmartRow(r)
+    return r
+
+
+class _SmartRow:
+    """Dict'i hem tuple hem dict gibi kullanmayı sağlar."""
+    def __init__(self, d):
+        self._d    = d
+        self._vals = list(d.values())
+        self._keys = list(d.keys())
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._vals[key]
+        return self._d[key]
+
+    def __iter__(self):
+        return iter(self._vals)
+
+    def __len__(self):
+        return len(self._vals)
+
+    def get(self, key, default=None):
+        return self._d.get(key, default)
+
+    def keys(self):
+        return self._d.keys()
+
+    def values(self):
+        return self._d.values()
+
+    def items(self):
+        return self._d.items()
+
+    def __repr__(self):
+        return repr(self._d)
+
+    def __contains__(self, key):
+        return key in self._d
 
 
 class BulutConn:
+    """SQLite conn ile aynı arayüz."""
     def commit(self): pass
     def close(self):  pass
     def cursor(self): return BulutCursor()
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
 
 
 # ═══════════════════════════════════════════════════════════════
-#  ANA FONKSİYONLAR  (database.py ile aynı imza)
+#  ANA FONKSİYONLAR
 # ═══════════════════════════════════════════════════════════════
 def baglanti_kur():
     try:
@@ -157,7 +179,10 @@ def baglanti_yenile(conn, cursor):
 
 def giris_yap(kullanici_adi, sifre):
     global _token, _kullanici
-    sonuc = _post("/giris", {"kullanici_adi": kullanici_adi, "sifre": sifre})
+    sonuc = _post("/giris", {
+        "kullanici_adi": kullanici_adi,
+        "sifre":         sifre
+    })
     _token     = sonuc["token"]
     _kullanici = kullanici_adi
     print("[BulutDB] Giriş başarılı:", kullanici_adi)
@@ -166,10 +191,8 @@ def giris_yap(kullanici_adi, sifre):
 
 def cikis_yap():
     global _token, _kullanici
-    try:
-        _post("/cikis", {})
-    except:
-        pass
+    try: _post("/cikis", {})
+    except: pass
     _token = None
     _kullanici = None
 
@@ -200,57 +223,12 @@ def izin_yukle(cursor, kullanici_adi):
 def izin_var(izinler, modul, tip="goruntule"):
     if modul not in izinler:
         return False
-    g, d = izinler[modul]
-    return d if tip == "duzenle" else g
+    v = izinler[modul]
+    g, d = (v[0], v[1]) if isinstance(v, (list, tuple)) else (False, False)
+    return bool(d) if tip == "duzenle" else bool(g)
 
 def _izin_varsayilan_yukle(cursor, conn=None):
-    pass  # API tarafında otomatik yapılıyor
-
-
-# ═══════════════════════════════════════════════════════════════
-#  API YARDIMCI FONKSİYONLARI
-# ═══════════════════════════════════════════════════════════════
-def siparis_listele():   return _get("/siparisler")
-def siparis_detay(sid):  return _get("/siparisler/{}".format(sid))
-def siparis_ekle(musteri_adi, teslim_tarihi=None, durum="Beklemede",
-                 toplam_tutar=0, para_birimi="TL", notlar=None,
-                 yetkili=None, kdv_oran=20):
-    return _post("/siparisler", dict(musteri_adi=musteri_adi,
-        teslim_tarihi=teslim_tarihi, durum=durum, toplam_tutar=toplam_tutar,
-        para_birimi=para_birimi, notlar=notlar, yetkili=yetkili, kdv_oran=kdv_oran))
-
-def stok_listele():  return _get("/stok")
-def stok_ekle(ad, stok_kodu=None, kategori=None, birim="Adet",
-              miktar=0, min_miktar=0, birim_fiyat=0,
-              para_birimi="TL", depo=None, notlar=None):
-    return _post("/stok", dict(ad=ad, stok_kodu=stok_kodu, kategori=kategori,
-        birim=birim, miktar=miktar, min_miktar=min_miktar,
-        birim_fiyat=birim_fiyat, para_birimi=para_birimi, depo=depo, notlar=notlar))
-
-def musteri_listele():  return _get("/musteriler")
-def musteri_ekle(ad, musteri_kodu=None, telefon=None, email=None,
-                 adres=None, vergi_no=None, vergi_dairesi=None, notlar=None):
-    return _post("/musteriler", dict(ad=ad, musteri_kodu=musteri_kodu,
-        telefon=telefon, email=email, adres=adres,
-        vergi_no=vergi_no, vergi_dairesi=vergi_dairesi, notlar=notlar))
-
-def is_listele():  return _get("/isler")
-def is_ekle(is_tanimi, siparis_id=None, sip_no=None, atanan=None,
-            baslangic=None, bitis=None, durum="Beklemede",
-            oncelik="Normal", notlar=None):
-    return _post("/isler", dict(is_tanimi=is_tanimi, siparis_id=siparis_id,
-        sip_no=sip_no, atanan=atanan, baslangic=baslangic, bitis=bitis,
-        durum=durum, oncelik=oncelik, notlar=notlar))
-
-def sevkiyat_listele():  return _get("/sevkiyatlar")
-def sevkiyat_ekle(musteri_adi, siparis_id=None, tarih=None,
-                  arac=None, sofor=None, durum="Hazırlanıyor",
-                  toplam_kg=0, notlar=None):
-    return _post("/sevkiyatlar", dict(musteri_adi=musteri_adi,
-        siparis_id=siparis_id, tarih=tarih, arac=arac, sofor=sofor,
-        durum=durum, toplam_kg=toplam_kg, notlar=notlar))
-
-def ozet_al():  return _get("/ozet")
+    pass  # API tarafında otomatik
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -292,6 +270,9 @@ def db_saglik_kontrol(cursor):
 
 def db_bilgi(cursor):
     try:
-        return ozet_al()
+        return _get("/ozet")
     except:
         return {"hata": "API bağlantısı yok"}
+
+def yedekleri_listele():   return []
+def yedekten_geri_yukle(y): return False

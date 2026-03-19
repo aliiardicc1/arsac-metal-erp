@@ -1,15 +1,31 @@
 """
 Arsac Metal ERP — Kullanıcı Yönetim Sistemi
-Şifreli giriş, kullanıcı ekleme/silme/rol değiştirme.
+Bulut modu: API üzerinden giriş doğrulama.
+Lokal modu: SQLite üzerinden giriş doğrulama.
 """
 import hashlib
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
+
 try:
     from log import log_yaz
 except:
-    def log_yaz(c,n,i,d=""): pass
+    def log_yaz(c, n, i, d=""): pass
+
+# Bulut modu kontrolü
+import json, os, sys
+def _bulut_modu():
+    try:
+        yol = os.path.join(
+            os.path.dirname(sys.executable) if getattr(sys, 'frozen', False)
+            else os.path.dirname(os.path.abspath(__file__)), "ayarlar.json")
+        with open(yol, "r", encoding="utf-8") as f:
+            return json.load(f).get("bulut_modu", False)
+    except:
+        return False
+
+BULUT_MODU = _bulut_modu()
 
 
 def sifre_hashle(sifre):
@@ -18,30 +34,39 @@ def sifre_hashle(sifre):
 
 def kullanici_dogrula(cursor, kullanici_adi, sifre):
     """
-    Kullanıcı adı + şifre doğrular.
+    Bulut modunda API'ye istek atar.
+    Lokal modunda SQLite sorgular.
     Döner: (rol, ad_soyad) veya None
     """
-    try:
-        h = sifre_hashle(sifre)
-        cursor.execute(
-            "SELECT rol, ad_soyad, aktif FROM kullanicilar WHERE kullanici_adi=? AND sifre_hash=?",
-            (kullanici_adi.strip(), h)
-        )
-        row = cursor.fetchone()
-        if row and row[2] == 1:
-            return row[0], row[1]
-    except Exception as e:
-        print(f"Doğrulama hatası: {e}")
-    return None
+    if BULUT_MODU:
+        try:
+            from database_bulut import giris_yap
+            sonuc = giris_yap(kullanici_adi.strip(), sifre)
+            if sonuc and sonuc.get("token"):
+                return sonuc.get("rol", "personel"), sonuc.get("ad_soyad", "")
+        except Exception as e:
+            print(f"[Bulut] Giriş hatası: {e}")
+        return None
+    else:
+        try:
+            h = sifre_hashle(sifre)
+            cursor.execute(
+                "SELECT rol, ad_soyad, aktif FROM kullanicilar WHERE kullanici_adi=? AND sifre_hash=?",
+                (kullanici_adi.strip(), h))
+            row = cursor.fetchone()
+            if row and row[2] == 1:
+                return row[0], row[1]
+        except Exception as e:
+            print(f"Doğrulama hatası: {e}")
+        return None
 
 
 def varsayilan_admin_olustur(cursor, conn):
-    """Eski admin rolleri yonetici yapar, yoksa yeni hesap oluşturur."""
+    if BULUT_MODU:
+        return  # API tarafında zaten oluşturuldu
     try:
-        # Eski 'admin' rolunu 'yonetici' ye cevir (migration)
         cursor.execute("UPDATE kullanicilar SET rol='yonetici' WHERE rol='admin'")
         conn.commit()
-        # Hic yonetici yoksa varsayilan olustur
         cursor.execute("SELECT COUNT(*) FROM kullanicilar WHERE rol='yonetici'")
         if cursor.fetchone()[0] == 0:
             cursor.execute("""
@@ -61,7 +86,8 @@ class GirisEkrani(QDialog):
         super().__init__()
         self.cursor = cursor
         self.conn   = conn
-        self.sonuc  = None  # (rol, kullanici_adi, ad_soyad)
+        self.sonuc  = None
+        self._sifre = ""  # main.py'de token almak için
         self.setWindowTitle("ARSAC METAL ERP — Giriş")
         self.setFixedSize(420, 520)
         self.setWindowFlags(Qt.Window | Qt.WindowCloseButtonHint)
@@ -94,7 +120,6 @@ class GirisEkrani(QDialog):
         lay.setContentsMargins(40, 30, 40, 30)
         lay.setSpacing(0)
 
-        # Logo / başlık
         lbl_logo = QLabel("ARSAC METAL")
         lbl_logo.setAlignment(Qt.AlignCenter)
         lbl_logo.setStyleSheet("font-size:28px;font-weight:900;color:#c0392b;letter-spacing:2px;")
@@ -106,7 +131,6 @@ class GirisEkrani(QDialog):
         lay.addWidget(lbl_alt)
         lay.addSpacing(30)
 
-        # Hata bandı
         self.lbl_hata = QLabel("")
         self.lbl_hata.setAlignment(Qt.AlignCenter)
         self.lbl_hata.setFixedHeight(36)
@@ -115,7 +139,6 @@ class GirisEkrani(QDialog):
         lay.addWidget(self.lbl_hata)
         lay.addSpacing(10)
 
-        # Kullanıcı adı
         lbl_k = QLabel("Kullanıcı Adı")
         lbl_k.setStyleSheet("font-size:12px;font-weight:bold;color:#7f8c8d;margin-bottom:4px;")
         lay.addWidget(lbl_k)
@@ -125,7 +148,6 @@ class GirisEkrani(QDialog):
         lay.addWidget(self.txt_kullanici)
         lay.addSpacing(16)
 
-        # Şifre
         lbl_s = QLabel("Şifre")
         lbl_s.setStyleSheet("font-size:12px;font-weight:bold;color:#7f8c8d;margin-bottom:4px;")
         lay.addWidget(lbl_s)
@@ -137,7 +159,6 @@ class GirisEkrani(QDialog):
         lay.addWidget(self.txt_sifre)
         lay.addSpacing(24)
 
-        # Giriş butonu
         self.btn_giris = QPushButton("GİRİŞ YAP")
         self.btn_giris.setObjectName("GirisBtn")
         self.btn_giris.setFixedHeight(50)
@@ -145,13 +166,12 @@ class GirisEkrani(QDialog):
         lay.addWidget(self.btn_giris)
         lay.addStretch()
 
-        # Alt bilgi
-        lbl_bilgi = QLabel("v1.0 © 2024 Arsac Metal")
+        mod_etiket = "☁ Bulut Modu" if BULUT_MODU else "💾 Lokal Mod"
+        lbl_bilgi = QLabel(f"v1.0 © 2024 Arsac Metal  •  {mod_etiket}")
         lbl_bilgi.setAlignment(Qt.AlignCenter)
         lbl_bilgi.setStyleSheet("font-size:11px;color:#bdc3c7;")
         lay.addWidget(lbl_bilgi)
 
-        # Enter ile giriş
         self.txt_kullanici.returnPressed.connect(lambda: self.txt_sifre.setFocus())
 
     def giris_yap(self):
@@ -162,16 +182,25 @@ class GirisEkrani(QDialog):
             self._hata("Kullanıcı adı ve şifre boş bırakılamaz!")
             return
 
+        self.btn_giris.setEnabled(False)
+        self.btn_giris.setText("Giriş yapılıyor...")
+
         sonuc = kullanici_dogrula(self.cursor, kullanici, sifre)
         if sonuc:
             rol, ad_soyad = sonuc
-            self.sonuc = (rol, kullanici, ad_soyad)
-            log_yaz(self.cursor, self.conn, "GIRIS", f"{kullanici} ({rol}) giris yapti")
+            self.sonuc  = (rol, kullanici, ad_soyad)
+            self._sifre = sifre
+            try:
+                log_yaz(self.cursor, self.conn, "GIRIS", f"{kullanici} ({rol}) giris yapti")
+            except:
+                pass
             self.accept()
         else:
             self._hata("Kullanıcı adı veya şifre hatalı!")
             self.txt_sifre.clear()
             self.txt_sifre.setFocus()
+            self.btn_giris.setEnabled(True)
+            self.btn_giris.setText("GİRİŞ YAP")
 
     def _hata(self, mesaj):
         self.lbl_hata.setText(f"⚠️  {mesaj}")
@@ -195,257 +224,216 @@ class KullaniciEkleDialog(QDialog):
             QLabel { color:#2c3e50; font-size:12px; font-weight:bold; }
             QLineEdit, QComboBox {
                 border:1.5px solid #dcdde1; border-radius:7px;
-                padding:7px 10px; font-size:13px; background:white; color:#2c3e50;
+                padding:8px; font-size:13px; background:white; color:#2c3e50;
             }
         """)
         self._build()
 
     def _build(self):
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(24, 20, 24, 20); lay.setSpacing(12)
+        lay.setContentsMargins(24, 20, 24, 20)
+        lay.setSpacing(10)
 
-        lay.addWidget(QLabel("Kullanici Adi:"))
-        self.txt_kadi = QLineEdit(); self.txt_kadi.setFixedHeight(38)
+        lay.addWidget(QLabel("Kullanici Adi"))
+        self.txt_kadi = QLineEdit()
+        self.txt_kadi.setFixedHeight(36)
         lay.addWidget(self.txt_kadi)
 
-        lay.addWidget(QLabel("Ad Soyad:"))
-        self.txt_ad = QLineEdit(); self.txt_ad.setFixedHeight(38)
+        lay.addWidget(QLabel("Ad Soyad"))
+        self.txt_ad = QLineEdit()
+        self.txt_ad.setFixedHeight(36)
         lay.addWidget(self.txt_ad)
 
-        lay.addWidget(QLabel("Sifre:"))
+        lay.addWidget(QLabel("Sifre"))
         self.txt_sifre = QLineEdit()
         self.txt_sifre.setEchoMode(QLineEdit.Password)
-        self.txt_sifre.setFixedHeight(38)
+        self.txt_sifre.setFixedHeight(36)
         lay.addWidget(self.txt_sifre)
 
-        lay.addWidget(QLabel("Rol:"))
-        self.cmb_rol = QComboBox(); self.cmb_rol.setFixedHeight(38)
-        self.cmb_rol.addItems(["personel", "satis", "uretim", "sevkiyat",
-                                "muhasebe", "yonetici"])
+        lay.addWidget(QLabel("Rol"))
+        self.cmb_rol = QComboBox()
+        self.cmb_rol.addItems(["personel","yonetici","satis","uretim","sevkiyat","muhasebe"])
+        self.cmb_rol.setFixedHeight(36)
         lay.addWidget(self.cmb_rol)
 
-        btn_lay = QHBoxLayout(); btn_lay.addStretch()
-        btn_iptal = QPushButton("Iptal")
-        btn_iptal.setStyleSheet("background:#dcdde1;color:#2c3e50;border-radius:7px;"
-                                 "padding:8px 20px;font-weight:bold;border:none;")
-        btn_iptal.clicked.connect(self.reject)
-        btn_kaydet = QPushButton("Kaydet")
-        btn_kaydet.setStyleSheet("background:#c0392b;color:white;border-radius:7px;"
-                                  "padding:8px 20px;font-weight:bold;border:none;")
-        btn_kaydet.clicked.connect(self._kaydet)
-        btn_lay.addWidget(btn_iptal); btn_lay.addWidget(btn_kaydet)
+        btn_lay = QHBoxLayout()
+        btn_lay.addStretch()
+        btn_ekle = QPushButton("Ekle")
+        btn_ekle.setFixedHeight(36)
+        btn_ekle.setStyleSheet("background:#c0392b;color:white;border-radius:7px;padding:6px 20px;font-weight:bold;border:none;")
+        btn_ekle.clicked.connect(self._ekle)
+        btn_lay.addWidget(btn_ekle)
         lay.addLayout(btn_lay)
 
-    def _kaydet(self):
+    def _ekle(self):
         kadi  = self.txt_kadi.text().strip()
         ad    = self.txt_ad.text().strip()
         sifre = self.txt_sifre.text().strip()
         rol   = self.cmb_rol.currentText()
 
-        if not kadi:
-            QMessageBox.warning(self, "Hata", "Kullanici adi bos olamaz!"); return
-        if not sifre:
-            QMessageBox.warning(self, "Hata", "Sifre bos olamaz!"); return
+        if not kadi or not sifre:
+            QMessageBox.warning(self, "Eksik", "Kullanici adi ve sifre zorunludur.")
+            return
 
-        import hashlib
-        h = hashlib.sha256(sifre.encode()).hexdigest()
-        tarih = __import__("datetime").datetime.now().strftime("%d.%m.%Y %H:%M")
-        try:
-            self.cursor.execute("""
-                INSERT INTO kullanicilar
-                    (kullanici_adi, sifre_hash, rol, ad_soyad, aktif, olusturma_tarihi)
-                VALUES (?, ?, ?, ?, 1, ?)
-            """, (kadi, h, rol, ad, tarih))
-            self.conn.commit()
-            self.kullanici_adi = kadi
-            self.rol = rol
-            self.accept()
-        except Exception as e:
-            if "UNIQUE" in str(e):
-                QMessageBox.warning(self, "Hata", "Bu kullanici adi zaten mevcut!")
-            else:
+        if BULUT_MODU:
+            try:
+                import urllib.request as urlreq
+                import json as _json
+                from database_bulut import _post, API_URL
+                _post("/kullanici_ekle", {
+                    "kullanici_adi": kadi, "ad_soyad": ad,
+                    "sifre": sifre, "rol": rol
+                })
+                self.kullanici_adi = kadi
+                self.rol = rol
+                self.accept()
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", str(e))
+        else:
+            try:
+                from datetime import datetime
+                h = sifre_hashle(sifre)
+                now = datetime.now().strftime("%d.%m.%Y %H:%M")
+                self.cursor.execute("""
+                    INSERT INTO kullanicilar (kullanici_adi, sifre_hash, rol, ad_soyad, aktif, olusturma_tarihi)
+                    VALUES (?, ?, ?, ?, 1, ?)
+                """, (kadi, h, rol, ad, now))
+                self.conn.commit()
+                self.kullanici_adi = kadi
+                self.rol = rol
+                self.accept()
+            except Exception as e:
                 QMessageBox.critical(self, "Hata", str(e))
 
 
 # ─────────────────────────────────────────────
-#  KULLANICI YÖNETİMİ (Admin paneli)
+#  KULLANICI YÖNETİMİ DİALOGU
 # ─────────────────────────────────────────────
 class KullaniciYonetimiDialog(QDialog):
-    MODULLER = [
-        ("ozet",       "Ozet / Dashboard"),
-        ("stok",       "Stok"),
-        ("talepler",   "Hammadde Talepleri"),
-        ("siparisler", "Siparisler"),
-        ("uretim",     "Uretim"),
-        ("sevkiyat",   "Sevkiyat"),
-        ("muhasebe",   "Muhasebe"),
-        ("satinalma",  "Satinalma"),
-        ("cariler",    "Cariler"),
-        ("analiz",     "Analiz"),
-        ("piyasa",     "Piyasa"),
-    ]
-
     def __init__(self, cursor, conn, parent=None):
         super().__init__(parent)
         self.cursor = cursor
         self.conn   = conn
         self.secili_kullanici = None
         self.setWindowTitle("Kullanici Yonetimi")
-        self.setMinimumSize(1000, 600)
+        self.setMinimumSize(900, 600)
         self.setStyleSheet("""
-            QDialog { background:#f4f6f9; font-family:'Segoe UI'; }
-            QTableWidget { background:white; border-radius:8px; border:1px solid #dcdde1; font-size:13px; }
-            QHeaderView::section { background:#2c3e50; color:white; padding:8px; font-weight:bold; border:none; }
-            QLabel { font-size:13px; font-weight:bold; color:#2c3e50; }
-            QLineEdit, QComboBox { border:1.5px solid #dcdde1; border-radius:8px; padding:8px 12px; font-size:13px; background:white; }
-            QLineEdit:focus { border:1.5px solid #c0392b; }
-            QGroupBox { background:white; border-radius:8px; border:1px solid #dcdde1;
-                        margin-top:8px; padding:12px; font-size:13px; }
-            QGroupBox::title { color:#c0392b; font-weight:bold; padding:0 6px; }
-            QCheckBox { font-size:13px; }
+            QDialog { background:#f4f6f9; }
+            QLabel { color:#2c3e50; font-size:12px; }
+            QTableWidget { background:white; border:1px solid #dcdde1; gridline-color:#f0f0f0; }
+            QHeaderView::section { background:#2c3e50; color:white; padding:6px; font-weight:bold; font-size:12px; }
         """)
-        self.init_ui()
+        self._build()
         self.yenile()
 
-    def init_ui(self):
+    def _build(self):
         main = QHBoxLayout(self)
-        main.setContentsMargins(15, 15, 15, 15)
-        main.setSpacing(14)
+        main.setContentsMargins(16, 16, 16, 16)
+        main.setSpacing(12)
 
-        # ── SOL: Kullanici listesi ──
-        sol = QWidget()
-        sol_lay = QVBoxLayout(sol)
-        sol_lay.setContentsMargins(0,0,0,0)
-        sol_lay.setSpacing(8)
+        # Sol — kullanici listesi
+        sol = QVBoxLayout()
+        baslik = QLabel("Kullanicilar")
+        baslik.setStyleSheet("font-size:15px;font-weight:bold;color:#2c3e50;")
+        sol.addWidget(baslik)
 
-        lbl = QLabel("Kullanicilar")
-        lbl.setStyleSheet("font-size:15px;font-weight:bold;color:#2c3e50;")
-        sol_lay.addWidget(lbl)
-
-        self.tablo = QTableWidget(0, 4)
-        self.tablo.setHorizontalHeaderLabels(["ID", "Kullanici Adi", "Ad Soyad", "Rol"])
-        self.tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tablo.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.tablo = QTableWidget()
+        self.tablo.setColumnCount(5)
+        self.tablo.setHorizontalHeaderLabels(["ID","Kullanici","Ad Soyad","Rol","Durum"])
+        self.tablo.horizontalHeader().setStretchLastSection(True)
+        self.tablo.setSelectionBehavior(QTableWidget.SelectRows)
         self.tablo.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.tablo.setAlternatingRowColors(True)
-        self.tablo.verticalHeader().setVisible(False)
         self.tablo.clicked.connect(self._kullanici_sec)
-        sol_lay.addWidget(self.tablo)
+        sol.addWidget(self.tablo)
 
         btn_lay = QHBoxLayout()
-        for etiket, stil, slot in [
-            ("Yeni Kullanici", "background:#27ae60;color:white;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12px;", self._kullanici_ekle),
-            ("Sifre Degistir", "background:#2980b9;color:white;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12px;", self._sifre_degistir),
-            ("Rol Degistir",   "background:#e67e22;color:white;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12px;", self._rol_degistir),
-            ("Aktif/Pasif",    "background:#8e44ad;color:white;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12px;", self._durum_degistir),
-            ("Sil",            "background:#e74c3c;color:white;border-radius:8px;padding:8px 12px;font-weight:bold;font-size:12px;", self._kullanici_sil),
-        ]:
-            b = QPushButton(etiket); b.setStyleSheet(stil); b.clicked.connect(slot)
-            btn_lay.addWidget(b)
-        sol_lay.addLayout(btn_lay)
-        main.addWidget(sol, 2)
+        for etiket, slot in [("+ Ekle", self._kullanici_ekle),
+                              ("Sifre", self._sifre_degistir),
+                              ("Rol",   self._rol_degistir),
+                              ("Durum", self._durum_degistir),
+                              ("Sil",   self._kullanici_sil)]:
+            btn = QPushButton(etiket)
+            btn.setFixedHeight(32)
+            btn.setStyleSheet("background:#2c3e50;color:white;border-radius:6px;padding:4px 12px;font-size:12px;border:none;")
+            btn.clicked.connect(slot)
+            btn_lay.addWidget(btn)
+        sol.addLayout(btn_lay)
+        main.addLayout(sol, 2)
 
-        # ── SAĞ: İzin paneli ──
-        sag = QWidget()
-        sag_lay = QVBoxLayout(sag)
-        sag_lay.setContentsMargins(0,0,0,0)
-        sag_lay.setSpacing(8)
-
-        izin_baslik = QHBoxLayout()
+        # Sağ — izin yönetimi
+        sag = QVBoxLayout()
         self.lbl_izin_baslik = QLabel("Izin Duzenle — once kullanici secin")
-        self.lbl_izin_baslik.setStyleSheet("font-size:15px;font-weight:bold;color:#2c3e50;")
-        izin_baslik.addWidget(self.lbl_izin_baslik)
-        izin_baslik.addStretch()
+        self.lbl_izin_baslik.setStyleSheet("font-size:14px;font-weight:bold;color:#2c3e50;")
+        sag.addWidget(self.lbl_izin_baslik)
 
-        btn_rol_sifirla = QPushButton("Role Gore Sifirla")
-        btn_rol_sifirla.setStyleSheet("background:#95a5a6;color:white;border-radius:8px;padding:6px 12px;font-weight:bold;font-size:12px;border:none;")
-        btn_rol_sifirla.clicked.connect(self._rol_sifirla)
-        izin_baslik.addWidget(btn_rol_sifirla)
+        MODULLER = [
+            ("ozet","Ozet"),("stok","Stok"),("talepler","Talepler"),
+            ("siparisler","Siparisler"),("uretim","Uretim"),("sevkiyat","Sevkiyat"),
+            ("muhasebe","Muhasebe"),("satinalma","Satinalma"),("cariler","Cariler"),
+            ("analiz","Analiz"),("piyasa","Piyasa"),
+        ]
 
-        btn_kaydet = QPushButton("Izinleri Kaydet")
-        btn_kaydet.setStyleSheet("background:#c0392b;color:white;border-radius:8px;padding:6px 16px;font-weight:bold;font-size:13px;border:none;")
-        btn_kaydet.clicked.connect(self._izin_kaydet)
-        izin_baslik.addWidget(btn_kaydet)
-        sag_lay.addLayout(izin_baslik)
-
-        # Açıklama
-        aciklama = QLabel(
-            "Goruntule: sayfayi gorebilir   |   "
-            "Duzenle: veri girebilir/degistirebilir"
-        )
-        aciklama.setStyleSheet("font-size:11px;color:#7f8c8d;font-weight:normal;background:transparent;")
-        sag_lay.addWidget(aciklama)
-
-        # İzin tablosu
-        izin_grp = QGroupBox("Modul Izinleri")
-        izin_grp_lay = QVBoxLayout(izin_grp)
-
-        self.izin_tablo = QTableWidget(len(self.MODULLER), 3)
-        self.izin_tablo.setHorizontalHeaderLabels(["Modul", "Goruntule", "Duzenle"])
-        self.izin_tablo.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.izin_tablo.horizontalHeader().setSectionResizeMode(1, QHeaderView.Fixed)
-        self.izin_tablo.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        self.izin_tablo.setColumnWidth(1, 100)
-        self.izin_tablo.setColumnWidth(2, 100)
-        self.izin_tablo.verticalHeader().setVisible(False)
-        self.izin_tablo.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.izin_tablo.setAlternatingRowColors(True)
-        self.izin_tablo.setShowGrid(False)
+        self.izin_tablo = QTableWidget(len(MODULLER), 3)
+        self.izin_tablo.setHorizontalHeaderLabels(["Modul","Goruntule","Duzenle"])
+        self.izin_tablo.horizontalHeader().setStretchLastSection(True)
         self.izin_tablo.setEnabled(False)
 
-        for i, (modul_key, modul_adi) in enumerate(self.MODULLER):
-            lbl_item = QTableWidgetItem("  " + modul_adi)
-            lbl_item.setData(Qt.UserRole, modul_key)
-            self.izin_tablo.setItem(i, 0, lbl_item)
-            self.izin_tablo.setRowHeight(i, 36)
-
-            for col, tip in [(1, "goruntule"), (2, "duzenle")]:
-                chk_widget = QWidget()
-                chk_lay = QHBoxLayout(chk_widget)
-                chk_lay.setContentsMargins(0,0,0,0)
-                chk_lay.setAlignment(Qt.AlignCenter)
+        for i, (key, ad) in enumerate(MODULLER):
+            item = QTableWidgetItem(ad)
+            item.setData(Qt.UserRole, key)
+            item.setFlags(Qt.ItemIsEnabled)
+            self.izin_tablo.setItem(i, 0, item)
+            for col in [1, 2]:
+                w = QWidget()
+                h = QHBoxLayout(w)
+                h.setAlignment(Qt.AlignCenter)
+                h.setContentsMargins(0,0,0,0)
                 chk = QCheckBox()
-                chk.setObjectName("{}_{}".format(modul_key, tip))
-                chk_lay.addWidget(chk)
-                self.izin_tablo.setCellWidget(i, col, chk_widget)
+                h.addWidget(chk)
+                self.izin_tablo.setCellWidget(i, col, w)
 
-        izin_grp_lay.addWidget(self.izin_tablo)
-        sag_lay.addWidget(izin_grp)
+        sag.addWidget(self.izin_tablo)
 
-        btn_kapat = QPushButton("Kapat")
-        btn_kapat.setStyleSheet("background:#dcdde1;color:#2c3e50;border-radius:8px;padding:10px 24px;font-weight:bold;")
-        btn_kapat.clicked.connect(self.accept)
-        h = QHBoxLayout(); h.addStretch(); h.addWidget(btn_kapat)
-        sag_lay.addLayout(h)
-
-        main.addWidget(sag, 3)
+        btn_izin_lay = QHBoxLayout()
+        btn_kaydet = QPushButton("Izinleri Kaydet")
+        btn_kaydet.setFixedHeight(34)
+        btn_kaydet.setStyleSheet("background:#27ae60;color:white;border-radius:6px;padding:4px 16px;font-weight:bold;border:none;")
+        btn_kaydet.clicked.connect(self._izin_kaydet)
+        btn_sifirla = QPushButton("Role Gore Sifirla")
+        btn_sifirla.setFixedHeight(34)
+        btn_sifirla.setStyleSheet("background:#e67e22;color:white;border-radius:6px;padding:4px 16px;font-weight:bold;border:none;")
+        btn_sifirla.clicked.connect(self._rol_sifirla)
+        btn_izin_lay.addWidget(btn_kaydet)
+        btn_izin_lay.addWidget(btn_sifirla)
+        btn_izin_lay.addStretch()
+        sag.addLayout(btn_izin_lay)
+        main.addLayout(sag, 3)
 
     def yenile(self):
         try:
-            self.cursor.execute("SELECT id, kullanici_adi, ad_soyad, rol, aktif FROM kullanicilar ORDER BY id")
+            if BULUT_MODU:
+                from database_bulut import _get
+                rows = _get("/kullanicilar_hepsi")
+            else:
+                self.cursor.execute("SELECT id, kullanici_adi, ad_soyad, rol, aktif FROM kullanicilar ORDER BY id")
+                rows = self.cursor.fetchall()
+
             self.tablo.setRowCount(0)
-            for i, row in enumerate(self.cursor.fetchall()):
+            for i, row in enumerate(rows):
+                if isinstance(row, dict):
+                    vals = [row.get("id",""), row.get("kullanici_adi",""),
+                            row.get("ad_soyad",""), row.get("rol",""), row.get("aktif",1)]
+                else:
+                    vals = list(row)
                 self.tablo.insertRow(i)
-                for j, val in enumerate(row[:4]):
+                for j, val in enumerate(vals[:4]):
                     item = QTableWidgetItem(str(val or ""))
                     item.setTextAlignment(Qt.AlignCenter)
                     self.tablo.setItem(i, j, item)
-                aktif = row[4]
+                aktif = vals[4]
                 durum_item = QTableWidgetItem("Aktif" if aktif else "Pasif")
                 durum_item.setTextAlignment(Qt.AlignCenter)
-                renk_map = {
-                    "yonetici": "#c0392b", "satis": "#27ae60",
-                    "uretim": "#8e44ad", "sevkiyat": "#e67e22",
-                    "muhasebe": "#2980b9", "personel": "#7f8c8d"
-                }
-                rol_item = self.tablo.item(i, 3)
-                if rol_item:
-                    renk = renk_map.get(row[3], "#2c3e50")
-                    rol_item.setForeground(QColor(renk))
-                if not aktif:
-                    for c in range(4):
-                        item2 = self.tablo.item(i, c)
-                        if item2: item2.setForeground(QColor("#bdc3c7"))
+                self.tablo.setItem(i, 4, durum_item)
         except Exception as e:
             print("Kullanici yenile hatasi:", e)
 
@@ -460,10 +448,15 @@ class KullaniciYonetimiDialog(QDialog):
 
     def _izin_yukle(self, kullanici_adi):
         try:
-            self.cursor.execute(
-                "SELECT modul, goruntule, duzenle FROM kullanici_izinler WHERE kullanici_adi=?",
-                (kullanici_adi,))
-            izinler = {m: (bool(g), bool(d)) for m, g, d in self.cursor.fetchall()}
+            if BULUT_MODU:
+                from database_bulut import _get
+                izinler_raw = _get("/izinler/{}".format(kullanici_adi))
+                izinler = {m: (bool(v[0]), bool(v[1])) for m, v in izinler_raw.items()}
+            else:
+                self.cursor.execute(
+                    "SELECT modul, goruntule, duzenle FROM kullanici_izinler WHERE kullanici_adi=?",
+                    (kullanici_adi,))
+                izinler = {m: (bool(g), bool(d)) for m, g, d in self.cursor.fetchall()}
 
             for i in range(self.izin_tablo.rowCount()):
                 modul_key = self.izin_tablo.item(i, 0).data(Qt.UserRole)
@@ -484,24 +477,28 @@ class KullaniciYonetimiDialog(QDialog):
             QMessageBox.warning(self, "Uyari", "Once bir kullanici secin.")
             return
         try:
+            izinler = {}
             for i in range(self.izin_tablo.rowCount()):
                 modul_key = self.izin_tablo.item(i, 0).data(Qt.UserRole)
                 g_widget = self.izin_tablo.cellWidget(i, 1)
                 d_widget = self.izin_tablo.cellWidget(i, 2)
                 g = g_widget.findChild(QCheckBox).isChecked() if g_widget else False
                 d = d_widget.findChild(QCheckBox).isChecked() if d_widget else False
-
-                # Düzenle işaretliyse görüntüle de otomatik işaret
                 if d: g = True
+                izinler[modul_key] = (int(g), int(d))
 
-                self.cursor.execute("""
-                    INSERT INTO kullanici_izinler (kullanici_adi, modul, goruntule, duzenle)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(kullanici_adi, modul) DO UPDATE SET goruntule=?, duzenle=?
-                """, (self.secili_kullanici, modul_key, int(g), int(d), int(g), int(d)))
+            if BULUT_MODU:
+                from database_bulut import _post
+                _post("/izinler/{}".format(self.secili_kullanici), izinler)
+            else:
+                for modul, (g, d) in izinler.items():
+                    self.cursor.execute("""
+                        INSERT INTO kullanici_izinler (kullanici_adi, modul, goruntule, duzenle)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(kullanici_adi, modul) DO UPDATE SET goruntule=?, duzenle=?
+                    """, (self.secili_kullanici, modul, g, d, g, d))
+                self.conn.commit()
 
-            self.conn.commit()
-            # Checkboxları senkronize et (duzenle -> goruntule otomatik)
             self._izin_yukle(self.secili_kullanici)
             QMessageBox.information(self, "Kaydedildi",
                 "{} icin izinler guncellendi.".format(self.secili_kullanici))
@@ -513,44 +510,56 @@ class KullaniciYonetimiDialog(QDialog):
             QMessageBox.warning(self, "Uyari", "Once bir kullanici secin.")
             return
         try:
-            self.cursor.execute("SELECT rol FROM kullanicilar WHERE kullanici_adi=?",
-                                (self.secili_kullanici,))
-            row = self.cursor.fetchone()
-            if not row: return
-            rol = row[0]
-            from database import ROL_VARSAYILAN_IZIN
+            if BULUT_MODU:
+                from database_bulut import _get, _post, ROL_VARSAYILAN_IZIN
+                kullanicilar = _get("/kullanicilar_hepsi")
+                rol = next((k["rol"] for k in kullanicilar if k["kullanici_adi"] == self.secili_kullanici), "personel")
+            else:
+                self.cursor.execute("SELECT rol FROM kullanicilar WHERE kullanici_adi=?", (self.secili_kullanici,))
+                row = self.cursor.fetchone()
+                if not row: return
+                rol = row[0]
+                from database import ROL_VARSAYILAN_IZIN
+
+            izinler = {}
             for modul, rol_izinleri in ROL_VARSAYILAN_IZIN.items():
                 g, d = rol_izinleri.get(rol, (0, 0))
-                self.cursor.execute("""
-                    INSERT INTO kullanici_izinler (kullanici_adi, modul, goruntule, duzenle)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(kullanici_adi, modul) DO UPDATE SET goruntule=?, duzenle=?
-                """, (self.secili_kullanici, modul, g, d, g, d))
-            self.conn.commit()
+                izinler[modul] = (g, d)
+
+            if BULUT_MODU:
+                from database_bulut import _post
+                _post("/izinler/{}".format(self.secili_kullanici), izinler)
+            else:
+                for modul, (g, d) in izinler.items():
+                    self.cursor.execute("""
+                        INSERT INTO kullanici_izinler (kullanici_adi, modul, goruntule, duzenle)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(kullanici_adi, modul) DO UPDATE SET goruntule=?, duzenle=?
+                    """, (self.secili_kullanici, modul, g, d, g, d))
+                self.conn.commit()
+
             self._izin_yukle(self.secili_kullanici)
             QMessageBox.information(self, "Sifirlandi",
-                "{} icin izinler '{}' rolune gore sifirlandi.".format(
-                    self.secili_kullanici, rol))
+                "{} icin izinler '{}' rolune gore sifirlandi.".format(self.secili_kullanici, rol))
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
 
     def _kullanici_ekle(self):
         dlg = KullaniciEkleDialog(self.cursor, self.conn, self)
         if dlg.exec_() == QDialog.Accepted:
-            # Yeni kullaniciya varsayilan izinleri yukle
-            yeni_kadi = dlg.kullanici_adi
-            yeni_rol  = dlg.rol
-            from database import ROL_VARSAYILAN_IZIN
-            for modul, rol_izinleri in ROL_VARSAYILAN_IZIN.items():
-                g, d = rol_izinleri.get(yeni_rol, (0, 0))
-                try:
-                    self.cursor.execute("""
-                        INSERT OR IGNORE INTO kullanici_izinler
-                            (kullanici_adi, modul, goruntule, duzenle)
-                        VALUES (?, ?, ?, ?)
-                    """, (yeni_kadi, modul, g, d))
-                except: pass
-            self.conn.commit()
+            if not BULUT_MODU:
+                yeni_kadi = dlg.kullanici_adi
+                yeni_rol  = dlg.rol
+                from database import ROL_VARSAYILAN_IZIN
+                for modul, rol_izinleri in ROL_VARSAYILAN_IZIN.items():
+                    g, d = rol_izinleri.get(yeni_rol, (0, 0))
+                    try:
+                        self.cursor.execute("""
+                            INSERT OR IGNORE INTO kullanici_izinler (kullanici_adi, modul, goruntule, duzenle)
+                            VALUES (?, ?, ?, ?)
+                        """, (yeni_kadi, modul, g, d))
+                    except: pass
+                self.conn.commit()
             self.yenile()
 
     def _sifre_degistir(self):
@@ -561,11 +570,18 @@ class KullaniciYonetimiDialog(QDialog):
         yeni, ok = QInputDialog.getText(self, "Sifre Degistir",
             "{} icin yeni sifre:".format(kadi), QLineEdit.Password)
         if ok and yeni.strip():
-            import hashlib
-            h = hashlib.sha256(yeni.strip().encode()).hexdigest()
-            self.cursor.execute("UPDATE kullanicilar SET sifre_hash=? WHERE kullanici_adi=?", (h, kadi))
-            self.conn.commit()
-            QMessageBox.information(self, "Tamam", "Sifre guncellendi.")
+            if BULUT_MODU:
+                try:
+                    from database_bulut import _post
+                    _post("/sifre_degistir", {"kullanici_adi": kadi, "sifre": yeni.strip()})
+                    QMessageBox.information(self, "Tamam", "Sifre guncellendi.")
+                except Exception as e:
+                    QMessageBox.critical(self, "Hata", str(e))
+            else:
+                h = sifre_hashle(yeni.strip())
+                self.cursor.execute("UPDATE kullanicilar SET sifre_hash=? WHERE kullanici_adi=?", (h, kadi))
+                self.conn.commit()
+                QMessageBox.information(self, "Tamam", "Sifre guncellendi.")
 
     def _rol_degistir(self):
         row = self.tablo.currentRow()
@@ -578,8 +594,15 @@ class KullaniciYonetimiDialog(QDialog):
             "{} icin yeni rol:".format(kadi), roller,
             roller.index(mevcut_rol) if mevcut_rol in roller else 0, False)
         if ok:
-            self.cursor.execute("UPDATE kullanicilar SET rol=? WHERE kullanici_adi=?", (rol, kadi))
-            self.conn.commit()
+            if BULUT_MODU:
+                try:
+                    from database_bulut import _post
+                    _post("/rol_degistir", {"kullanici_adi": kadi, "rol": rol})
+                except Exception as e:
+                    QMessageBox.critical(self, "Hata", str(e)); return
+            else:
+                self.cursor.execute("UPDATE kullanicilar SET rol=? WHERE kullanici_adi=?", (rol, kadi))
+                self.conn.commit()
             self.yenile()
 
     def _durum_degistir(self):
@@ -587,13 +610,20 @@ class KullaniciYonetimiDialog(QDialog):
         if row < 0:
             QMessageBox.warning(self, "Uyari", "Bir kullanici secin."); return
         kadi = self.tablo.item(row, 1).text()
-        self.cursor.execute("SELECT aktif FROM kullanicilar WHERE kullanici_adi=?", (kadi,))
-        r = self.cursor.fetchone()
-        if r:
-            yeni = 0 if r[0] else 1
-            self.cursor.execute("UPDATE kullanicilar SET aktif=? WHERE kullanici_adi=?", (yeni, kadi))
-            self.conn.commit()
-            self.yenile()
+        if BULUT_MODU:
+            try:
+                from database_bulut import _post
+                _post("/durum_degistir", {"kullanici_adi": kadi})
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", str(e)); return
+        else:
+            self.cursor.execute("SELECT aktif FROM kullanicilar WHERE kullanici_adi=?", (kadi,))
+            r = self.cursor.fetchone()
+            if r:
+                yeni = 0 if r[0] else 1
+                self.cursor.execute("UPDATE kullanicilar SET aktif=? WHERE kullanici_adi=?", (yeni, kadi))
+                self.conn.commit()
+        self.yenile()
 
     def _kullanici_sil(self):
         row = self.tablo.currentRow()
@@ -602,12 +632,18 @@ class KullaniciYonetimiDialog(QDialog):
         kadi = self.tablo.item(row, 1).text()
         uid  = self.tablo.item(row, 0).text()
         cevap = QMessageBox.question(self, "Sil",
-            "{} silinsin mi?".format(kadi),
-            QMessageBox.Yes | QMessageBox.No)
+            "{} silinsin mi?".format(kadi), QMessageBox.Yes | QMessageBox.No)
         if cevap == QMessageBox.Yes:
-            self.cursor.execute("DELETE FROM kullanicilar WHERE id=?", (uid,))
-            self.cursor.execute("DELETE FROM kullanici_izinler WHERE kullanici_adi=?", (kadi,))
-            self.conn.commit()
+            if BULUT_MODU:
+                try:
+                    from database_bulut import _post
+                    _post("/kullanici_sil", {"kullanici_adi": kadi})
+                except Exception as e:
+                    QMessageBox.critical(self, "Hata", str(e)); return
+            else:
+                self.cursor.execute("DELETE FROM kullanicilar WHERE id=?", (uid,))
+                self.cursor.execute("DELETE FROM kullanici_izinler WHERE kullanici_adi=?", (kadi,))
+                self.conn.commit()
             if self.secili_kullanici == kadi:
                 self.secili_kullanici = None
                 self.izin_tablo.setEnabled(False)
