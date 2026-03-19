@@ -24,7 +24,7 @@ jobs:
       - name: Bagimlilikları yukle
         run: |
           python -m pip install --upgrade pip
-          pip install pyqt5 pyinstaller requests reportlab
+          pip install pyqt5 pyinstaller requests reportlab psycopg2-binary
 
       - name: Surum numarasini guncelle
         shell: python
@@ -39,18 +39,57 @@ jobs:
               f.write(content)
           print(f"Surum: {surum}")
 
+      - name: ayarlar.json olustur (bulut modu)
+        shell: python
+        run: |
+          import json
+          ayarlar = {
+            "bulut_modu": True,
+            "api_url": "http://213.159.6.166:8000",
+            "db_yolu": ""
+          }
+          with open("ayarlar.json", "w", encoding="utf-8") as f:
+              json.dump(ayarlar, f, ensure_ascii=False, indent=2)
+          print("ayarlar.json olusturuldu (bulut modu)")
+
       - name: EXE olustur
         run: |
-          pyinstaller --onefile --windowed --name ArsacMetalERP main.py
+          pyinstaller --onefile --windowed --name ArsacMetalERP --add-data "ayarlar.json;." --add-data "logo.jpg;." main.py
 
-      - name: Release olustur ve EXE yukle
+      - name: ayarlar.json dist klasorune kopyala
+        shell: python
+        run: |
+          import shutil
+          shutil.copy("ayarlar.json", "dist/ayarlar.json")
+          print("ayarlar.json dist klasorune kopyalandi")
+
+      - name: ZIP olustur (EXE + ayarlar.json)
+        shell: python
+        run: |
+          import zipfile, os
+          with zipfile.ZipFile("dist/ArsacMetalERP_Kurulum.zip", "w") as z:
+              z.write("dist/ArsacMetalERP.exe", "ArsacMetalERP.exe")
+              z.write("dist/ayarlar.json", "ayarlar.json")
+          print("ZIP olusturuldu")
+
+      - name: Release olustur ve dosyaları yukle
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: "Arsac Metal ERP ${{ github.ref_name }}"
           body: |
             ## Arsac Metal ERP ${{ github.ref_name }}
-            EXE dosyasını indirip eski sürümün üzerine kopyalayın.
-          files: dist/ArsacMetalERP.exe
+
+            ### Kurulum
+            1. `ArsacMetalERP_Kurulum.zip` dosyasını indirin
+            2. ZIP'i bir klasöre çıkartın
+            3. `ArsacMetalERP.exe` dosyasını çalıştırın
+            4. Kullanıcı adı: `aliiardicc` / Şifre: `arsac2024`
+
+            > ☁️ Bulut modu aktif — tüm bilgisayarlar ortak veritabanına bağlanır.
+          files: |
+            dist/ArsacMetalERP.exe
+            dist/ayarlar.json
+            dist/ArsacMetalERP_Kurulum.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
