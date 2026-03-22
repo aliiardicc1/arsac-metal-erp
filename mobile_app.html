@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Arsac ERP">
+<meta name="theme-color" content="#c0392b">
+<title>Arsac Metal ERP</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root {
+    --red:    #c0392b;
+    --red2:   #a93226;
+    --blue:   #2980b9;
+    --green:  #27ae60;
+    --orange: #e67e22;
+    --purple: #8e44ad;
+    --dark:   #2c3e50;
+    --gray:   #7f8c8d;
+    --light:  #f4f6f9;
+    --white:  #ffffff;
+    --border: #dcdde1;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--light);
+    color: var(--dark);
+    min-height: 100vh;
+    padding-bottom: 80px;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--red);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .header-logo {
+    font-size: 18px;
+    font-weight: 900;
+    color: white;
+    letter-spacing: 1px;
+  }
+  .header-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+  }
+  .header-user span {
+    background: rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 4px 10px;
+  }
+  .btn-logout {
+    background: rgba(255,255,255,0.15);
+    border: none;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* ── Sayfa başlığı ── */
+  .page-title {
+    padding: 16px 16px 8px;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--dark);
+  }
+  .page-subtitle {
+    padding: 0 16px 12px;
+    font-size: 12px;
+    color: var(--gray);
+  }
+
+  /* ── Özet kartlar ── */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    padding: 0 16px 16px;
+  }
+  .card {
+    background: white;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    border-left: 4px solid var(--border);
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+    position: relative;
+    overflow: hidden;
+  }
+  .card:active { transform: scale(0.97); }
+  .card-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+  .card-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--gray);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .card-value {
+    font-size: 28px;
+    font-weight: 900;
+  }
+  .card-sub {
+    font-size: 11px;
+    color: var(--gray);
+    margin-top: 4px;
+  }
+  .card.red    { border-left-color: var(--red);    }
+  .card.blue   { border-left-color: var(--blue);   }
+  .card.green  { border-left-color: var(--green);  }
+  .card.orange { border-left-color: var(--orange); }
+  .card.purple { border-left-color: var(--purple); }
+  .card.dark   { border-left-color: var(--dark);   }
+  .card.red    .card-value { color: var(--red);    }
+  .card.blue   .card-value { color: var(--blue);   }
+  .card.green  .card-value { color: var(--green);  }
+  .card.orange .card-value { color: var(--orange); }
+  .card.purple .card-value { color: var(--purple); }
+  .card.dark   .card-value { color: var(--dark);   }
+
+  /* ── Bölüm başlığı ── */
+  .section-title {
+    padding: 8px 16px 8px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--gray);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Liste ── */
+  .list-card {
+    background: white;
+    border-radius: 14px;
+    margin: 0 16px 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    overflow: hidden;
+  }
+  .list-item {
+    padding: 14px 16px;
+    border-bottom: 1px solid #f0f2f5;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+  }
+  .list-item:last-child { border-bottom: none; }
+  .list-item:active { background: var(--light); }
+  .list-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .list-content { flex: 1; min-width: 0; }
+  .list-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--dark);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .list-sub {
+    font-size: 12px;
+    color: var(--gray);
+    margin-top: 2px;
+  }
+  .list-badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .badge-bekliyor  { background: #fef9e7; color: #f39c12; }
+  .badge-uretimde  { background: #eaf4fb; color: #2980b9; }
+  .badge-hazir     { background: #f5eef8; color: #8e44ad; }
+  .badge-sevkedildi{ background: #eafaf1; color: #27ae60; }
+  .badge-alindi    { background: #fef9e7; color: #f39c12; }
+  .badge-tamamlandi{ background: #eafaf1; color: #27ae60; }
+
+  /* ── Bottom nav ── */
+  .bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid var(--border);
+    display: flex;
+    z-index: 100;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.08);
+  }
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 4px 8px;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--gray);
+    font-size: 11px;
+    gap: 4px;
+    transition: color 0.15s;
+  }
+  .nav-item.active { color: var(--red); }
+  .nav-icon { font-size: 22px; }
+
+  /* ── Sayfa geçişleri ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── Giriş ekranı ── */
+  .login-wrap {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+    background: linear-gradient(135deg, #c0392b 0%, #2c3e50 100%);
+  }
+  .login-logo {
+    font-size: 32px;
+    font-weight: 900;
+    color: white;
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+  .login-sub {
+    font-size: 14px;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 40px;
+  }
+  .login-box {
+    background: white;
+    border-radius: 20px;
+    padding: 28px 24px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .login-box h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--dark);
+    margin-bottom: 20px;
+  }
+  .form-group { margin-bottom: 16px; }
+  .form-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--gray);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .form-input {
+    width: 100%;
+    height: 48px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 0 14px;
+    font-size: 15px;
+    color: var(--dark);
+    background: white;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus { border-color: var(--red); }
+  .btn-login {
+    width: 100%;
+    height: 50px;
+    background: var(--red);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: background 0.15s;
+  }
+  .btn-login:active { background: var(--red2); }
+  .error-msg {
+    background: #fde8e8;
+    color: var(--red);
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: none;
+  }
+
+  /* ── Yükleniyor ── */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    flex-direction: column;
+    gap: 12px;
+    color: var(--gray);
+    font-size: 14px;
+  }
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--red);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Detay sayfası ── */
+  .detail-header {
+    background: white;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 56px;
+    z-index: 90;
+  }
+  .btn-back {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: var(--red);
+    padding: 0 4px;
+  }
+  .detail-title { font-size: 16px; font-weight: 700; }
+
+  /* ── Durum rengi ── */
+  .durum-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  /* ── Bilgi satırları ── */
+  .info-row {
+    display: flex;
+    padding: 12px 16px;
+    border-bottom: 1px solid #f0f2f5;
+    align-items: center;
+  }
+  .info-key {
+    font-size: 12px;
+    color: var(--gray);
+    width: 120px;
+    flex-shrink: 0;
+    font-weight: 600;
+  }
+  .info-val {
+    font-size: 14px;
+    color: var(--dark);
+    flex: 1;
+    font-weight: 500;
+  }
+
+  /* ── Arama ── */
+  .search-bar {
+    padding: 10px 16px;
+    background: var(--light);
+    position: sticky;
+    top: 56px;
+    z-index: 90;
+  }
+  .search-input {
+    width: 100%;
+    height: 40px;
+    border: 1.5px solid var(--border);
+    border-radius: 20px;
+    padding: 0 16px 0 40px;
+    font-size: 14px;
+    background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237f8c8d' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 12px center;
+    outline: none;
+    color: var(--dark);
+  }
+  .search-input:focus { border-color: var(--red); }
+
+  /* ── Pull to refresh göstergesi ── */
+  .refresh-hint {
+    text-align: center;
+    padding: 8px;
+    font-size: 12px;
+    color: var(--gray);
+  }
+
+  /* ── Boş durum ── */
+  .empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--gray);
+  }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-text { font-size: 14px; }
+</style>
+</head>
+<body>
+
+<!-- GİRİŞ EKRANI -->
+<div id="loginScreen">
+  <div class="login-wrap">
+    <div class="login-logo">ARSAC METAL</div>
+    <div class="login-sub">ERP Mobil</div>
+    <div class="login-box">
+      <h2>Giriş Yap</h2>
+      <div class="error-msg" id="loginError">Kullanıcı adı veya şifre hatalı!</div>
+      <div class="form-group">
+        <label class="form-label">Kullanıcı Adı</label>
+        <input class="form-input" id="txtUser" type="text" autocomplete="username" placeholder="Kullanıcı adınız">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Şifre</label>
+        <input class="form-input" id="txtPass" type="password" autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <button class="btn-login" id="btnLogin">GİRİŞ YAP</button>
+    </div>
+  </div>
+</div>
+
+<!-- ANA UYGULAMA -->
+<div id="appScreen" style="display:none">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-logo">ARSAC</div>
+    <div class="header-user">
+      <span id="headerUser">—</span>
+      <button class="btn-logout" onclick="logout()">Çıkış</button>
+    </div>
+  </div>
+
+  <!-- ÖZET SAYFASI -->
+  <div class="page active" id="pageOzet">
+    <div class="page-title">Merhaba 👋</div>
+    <div class="page-subtitle" id="ozet-tarih">—</div>
+
+    <div class="cards-grid" id="ozetCards">
+      <div class="loading" style="grid-column:1/-1"><div class="spinner"></div></div>
+    </div>
+
+    <div class="section-title">Son Siparişler</div>
+    <div class="list-card" id="sonSiparisler">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+
+    <div class="section-title">Üretim Durumu</div>
+    <div class="list-card" id="uretimDurum">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- SİPARİŞLER SAYFASI -->
+  <div class="page" id="pageSiparis">
+    <div class="search-bar">
+      <input class="search-input" id="sipAra" placeholder="Sipariş no veya müşteri ara..." oninput="filtreSiparis(this.value)">
+    </div>
+    <div id="siparisList">
+      <div class="loading"><div class="spinner"></div><span>Yükleniyor...</span></div>
+    </div>
+  </div>
+
+  <!-- ÜRETİM SAYFASI -->
+  <div class="page" id="pageUretim">
+    <div class="search-bar">
+      <input class="search-input" id="urtAra" placeholder="İş no veya müşteri ara..." oninput="filtreUretim(this.value)">
+    </div>
+    <div id="uretimList">
+      <div class="loading"><div class="spinner"></div><span>Yükleniyor...</span></div>
+    </div>
+  </div>
+
+  <!-- SEVKİYAT SAYFASI -->
+  <div class="page" id="pageSevkiyat">
+    <div class="search-bar">
+      <input class="search-input" id="sevAra" placeholder="Plaka, şoför veya sipariş ara..." oninput="filtreSevkiyat(this.value)">
+    </div>
+    <div class="section-title">Bekleyen Parçalar</div>
+    <div class="list-card" id="bekleyenParcalar">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+    <div class="section-title">Sevkiyat Geçmişi</div>
+    <div class="list-card" id="sevkiyatGecmis">
+      <div class="loading"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- STOK SAYFASI -->
+  <div class="page" id="pageStok">
+    <div class="search-bar">
+      <input class="search-input" id="stokAra" placeholder="Stok kodu veya malzeme ara..." oninput="filtreStok(this.value)">
+    </div>
+    <div id="stokList">
+      <div class="loading"><div class="spinner"></div><span>Yükleniyor...</span></div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav -->
+  <div class="bottom-nav">
+    <button class="nav-item active" onclick="gotoPage('ozet', this)">
+      <span class="nav-icon">📊</span>Özet
+    </button>
+    <button class="nav-item" onclick="gotoPage('siparis', this)">
+      <span class="nav-icon">🛒</span>Siparişler
+    </button>
+    <button class="nav-item" onclick="gotoPage('uretim', this)">
+      <span class="nav-icon">🏭</span>Üretim
+    </button>
+    <button class="nav-item" onclick="gotoPage('sevkiyat', this)">
+      <span class="nav-icon">🚚</span>Sevkiyat
+    </button>
+    <button class="nav-item" onclick="gotoPage('stok', this)">
+      <span class="nav-icon">📦</span>Stok
+    </button>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════
+//  AYARLAR
+// ═══════════════════════════════════════
+const API = 'http://213.159.6.166:8000';
+let token = localStorage.getItem('arsac_token') || '';
+let kullanici = localStorage.getItem('arsac_user') || '';
+let _sipData = [], _urtData = [], _stokData = [];
+
+// ═══════════════════════════════════════
+//  YARDIMCI
+// ═══════════════════════════════════════
+async function api(method, path, body=null) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function durumBadge(durum) {
+  const map = {
+    'Beklemede':'badge-bekliyor','Alindi':'badge-alindi','Uretimde':'badge-uretimde',
+    'Hazir':'badge-hazir','Sevk Edildi':'badge-sevkedildi','Tamamlandi':'badge-tamamlandi',
+    'Bekliyor':'badge-bekliyor','Yolda':'badge-uretimde','Teslim Edildi':'badge-tamamlandi'
+  };
+  return `<span class="list-badge ${map[durum]||'badge-bekliyor'}">${durum}</span>`;
+}
+
+function tarihFmt() {
+  const d = new Date();
+  return d.toLocaleDateString('tr-TR', {weekday:'long', day:'numeric', month:'long'});
+}
+
+// ═══════════════════════════════════════
+//  GİRİŞ / ÇIKIŞ
+// ═══════════════════════════════════════
+async function giris() {
+  const user = document.getElementById('txtUser').value.trim();
+  const pass = document.getElementById('txtPass').value;
+  const err  = document.getElementById('loginError');
+  const btn  = document.getElementById('btnLogin');
+
+  if (!user || !pass) { err.style.display='block'; err.textContent='Tüm alanları doldurun!'; return; }
+  btn.textContent = 'Giriş yapılıyor...'; btn.disabled = true;
+
+  try {
+    const data = await fetch(API+'/giris', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({kullanici_adi: user, sifre: pass})
+    }).then(r => { if(!r.ok) throw new Error(); return r.json(); });
+
+    token = data.token; kullanici = data.ad_soyad || data.kullanici_adi;
+    localStorage.setItem('arsac_token', token);
+    localStorage.setItem('arsac_user', kullanici);
+    err.style.display = 'none';
+    startApp();
+  } catch {
+    err.style.display = 'block'; err.textContent = 'Kullanıcı adı veya şifre hatalı!';
+    btn.textContent = 'GİRİŞ YAP'; btn.disabled = false;
+  }
+}
+
+function logout() {
+  localStorage.removeItem('arsac_token'); localStorage.removeItem('arsac_user');
+  token = ''; kullanici = '';
+  document.getElementById('appScreen').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'block';
+}
+
+document.getElementById('btnLogin').onclick = giris;
+document.getElementById('txtPass').onkeypress = e => { if(e.key==='Enter') giris(); };
+
+// ═══════════════════════════════════════
+//  UYGULAMA BAŞLAT
+// ═══════════════════════════════════════
+function startApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  document.getElementById('headerUser').textContent = kullanici;
+  document.getElementById('ozet-tarih').textContent = tarihFmt();
+  loadOzet();
+}
+
+// ═══════════════════════════════════════
+//  SAYFA GEÇİŞİ
+// ═══════════════════════════════════════
+function gotoPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('page' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+  btn.classList.add('active');
+  window.scrollTo(0,0);
+  if (name === 'siparis')  loadSiparisler();
+  if (name === 'uretim')   loadUretim();
+  if (name === 'sevkiyat') loadSevkiyat();
+  if (name === 'stok')     loadStok();
+}
+
+// ═══════════════════════════════════════
+//  ÖZET
+// ═══════════════════════════════════════
+async function loadOzet() {
+  try {
+    const oz = await api('GET', '/ozet');
+
+    document.getElementById('ozetCards').innerHTML = `
+      <div class="card red" onclick="gotoPage('siparis', document.querySelectorAll('.nav-item')[1])">
+        <div class="card-icon">🛒</div>
+        <div class="card-label">Toplam Sipariş</div>
+        <div class="card-value">${oz.toplam_siparis||0}</div>
+        <div class="card-sub">${oz.bekleyen_siparis||0} bekleyen</div>
+      </div>
+      <div class="card blue" onclick="gotoPage('uretim', document.querySelectorAll('.nav-item')[2])">
+        <div class="card-icon">🏭</div>
+        <div class="card-label">Üretim</div>
+        <div class="card-value">${oz.toplam_is||0}</div>
+        <div class="card-sub">${oz.devam_eden_is||0} devam ediyor</div>
+      </div>
+      <div class="card orange" onclick="gotoPage('sevkiyat', document.querySelectorAll('.nav-item')[3])">
+        <div class="card-icon">🚚</div>
+        <div class="card-label">Sevkiyat</div>
+        <div class="card-value">${oz.toplam_sevkiyat||0}</div>
+        <div class="card-sub">toplam</div>
+      </div>
+      <div class="card green" onclick="gotoPage('stok', document.querySelectorAll('.nav-item')[4])">
+        <div class="card-icon">📦</div>
+        <div class="card-label">Stok Kalemi</div>
+        <div class="card-value">${oz.toplam_stok_kalemi||0}</div>
+        <div class="card-sub">${oz.kritik_stok||0} kritik</div>
+      </div>
+      <div class="card purple">
+        <div class="card-icon">👥</div>
+        <div class="card-label">Müşteri</div>
+        <div class="card-value">${oz.toplam_musteri||0}</div>
+        <div class="card-sub">aktif</div>
+      </div>
+      <div class="card dark">
+        <div class="card-icon">⚠️</div>
+        <div class="card-label">Kritik Stok</div>
+        <div class="card-value">${oz.kritik_stok||0}</div>
+        <div class="card-sub">yenilenmeli</div>
+      </div>
+    `;
+
+    // Son siparişler
+    const sips = await api('GET', '/siparisler');
+    const son5 = sips.slice(0, 5);
+    document.getElementById('sonSiparisler').innerHTML = son5.length ? son5.map(s => `
+      <div class="list-item">
+        <div class="list-icon" style="background:#fdecea">${'🛒'}</div>
+        <div class="list-content">
+          <div class="list-title">${s.sip_no||'-'} — ${s.musteri||'-'}</div>
+          <div class="list-sub">${s.tarih||''}</div>
+        </div>
+        ${durumBadge(s.durum||'Alindi')}
+      </div>`).join('') : '<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sipariş yok</div></div>';
+
+    // Üretim durumu
+    const isler = await api('GET', '/isler');
+    const son3  = isler.slice(0,3);
+    document.getElementById('uretimDurum').innerHTML = son3.length ? son3.map(i => `
+      <div class="list-item">
+        <div class="list-icon" style="background:#f5eef8">${'🏭'}</div>
+        <div class="list-content">
+          <div class="list-title">${i.is_no||'-'} — ${i.musteri||'-'}</div>
+          <div class="list-sub">İlerleme: %${i.ilerleme||0}</div>
+        </div>
+        ${durumBadge(i.durum||'Beklemede')}
+      </div>`).join('') : '<div class="empty"><div class="empty-icon">🏭</div><div class="empty-text">İş emri yok</div></div>';
+
+  } catch(e) {
+    document.getElementById('ozetCards').innerHTML = `<div class="empty" style="grid-column:1/-1">Bağlantı hatası: ${e.message}</div>`;
+  }
+}
+
+// ═══════════════════════════════════════
+//  SİPARİŞLER
+// ═══════════════════════════════════════
+async function loadSiparisler() {
+  document.getElementById('siparisList').innerHTML = '<div class="loading"><div class="spinner"></div><span>Yükleniyor...</span></div>';
+  try {
+    _sipData = await api('GET', '/siparisler');
+    renderSiparisler(_sipData);
+  } catch(e) {
+    document.getElementById('siparisList').innerHTML = `<div class="empty">Hata: ${e.message}</div>`;
+  }
+}
+
+function renderSiparisler(data) {
+  document.getElementById('siparisList').innerHTML = data.length ?
+    `<div class="list-card">${data.map(s => `
+      <div class="list-item">
+        <div class="list-icon" style="background:#fdecea">🛒</div>
+        <div class="list-content">
+          <div class="list-title">${s.sip_no||'-'} — ${s.musteri||'-'}</div>
+          <div class="list-sub">${s.tarih||''} ${s.termin ? '· Termin: '+s.termin : ''}</div>
+        </div>
+        ${durumBadge(s.durum||'Alindi')}
+      </div>`).join('')}</div>` :
+    '<div class="empty"><div class="empty-icon">🛒</div><div class="empty-text">Sipariş bulunamadı</div></div>';
+}
+
+function filtreSiparis(txt) {
+  txt = txt.toLowerCase();
+  renderSiparisler(_sipData.filter(s =>
+    (s.sip_no||'').toLowerCase().includes(txt) ||
+    (s.musteri||'').toLowerCase().includes(txt)));
+}
+
+// ═══════════════════════════════════════
+//  ÜRETİM
+// ═══════════════════════════════════════
+async function loadUretim() {
+  document.getElementById('uretimList').innerHTML = '<div class="loading"><div class="spinner"></div><span>Yükleniyor...</span></div>';
+  try {
+    _urtData = await api('GET', '/isler');
+    renderUretim(_urtData);
+  } catch(e) {
+    document.getElementById('uretimList').innerHTML = `<div class="empty">Hata: ${e.message}</div>`;
+  }
+}
+
+function renderUretim(data) {
+  document.getElementById('uretimList').innerHTML = data.length ?
+    `<div class="list-card">${data.map(i => `
+      <div class="list-item">
+        <div class="list-icon" style="background:#f5eef8">🏭</div>
+        <div class="list-content">
+          <div class="list-title">${i.is_no||'-'} — ${i.musteri||'-'}</div>
+          <div class="list-sub">
+            İlerleme: %${i.ilerleme||0}
+            <div style="margin-top:4px;background:#f0f2f5;border-radius:10px;height:6px;width:120px">
+              <div style="background:#8e44ad;height:6px;border-radius:10px;width:${Math.min(100,i.ilerleme||0)}%"></div>
+            </div>
+          </div>
+        </div>
+        ${durumBadge(i.durum||'Beklemede')}
+      </div>`).join('')}</div>` :
+    '<div class="empty"><div class="empty-icon">🏭</div><div class="empty-text">İş emri bulunamadı</div></div>';
+}
+
+function filtreUretim(txt) {
+  txt = txt.toLowerCase();
+  renderUretim(_urtData.filter(i =>
+    (i.is_no||'').toLowerCase().includes(txt) ||
+    (i.musteri||'').toLowerCase().includes(txt)));
+}
+
+// ═══════════════════════════════════════
+//  SEVKİYAT
+// ═══════════════════════════════════════
+async function loadSevkiyat() {
+  try {
+    // Bekleyen parçalar
+    const r = await api('POST', '/sorgu', {
+      sql: "SELECT sip_no, musteri, parca_adi, bekleyen_adet FROM parca_sevk_bekliyor WHERE durum='Bekliyor' ORDER BY sip_no",
+      params: []
+    });
+    const bekleyen = r.rows || [];
+    document.getElementById('bekleyenParcalar').innerHTML = bekleyen.length ?
+      bekleyen.map(p => `
+        <div class="list-item">
+          <div class="list-icon" style="background:#f5eef8">📦</div>
+          <div class="list-content">
+            <div class="list-title">${p.parca_adi||'-'}</div>
+            <div class="list-sub">${p.sip_no||''} — ${p.musteri||''}</div>
+          </div>
+          <span class="list-badge badge-bekliyor">${p.bekleyen_adet||0} adet</span>
+        </div>`).join('') :
+      '<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">Bekleyen parça yok</div></div>';
+
+    // Sevkiyat geçmişi
+    const r2 = await api('POST', '/sorgu', {
+      sql: "SELECT plaka, sofor, tarih, durum FROM sevkiyatlar ORDER BY id DESC LIMIT 10",
+      params: []
+    });
+    const sevkler = r2.rows || [];
+    document.getElementById('sevkiyatGecmis').innerHTML = sevkler.length ?
+      sevkler.map(s => `
+        <div class="list-item">
+          <div class="list-icon" style="background:#eaf4fb">🚚</div>
+          <div class="list-content">
+            <div class="list-title">${s.plaka||'-'} — ${s.sofor||'-'}</div>
+            <div class="list-sub">${s.tarih||''}</div>
+          </div>
+          ${durumBadge(s.durum||'Yolda')}
+        </div>`).join('') :
+      '<div class="empty"><div class="empty-icon">🚚</div><div class="empty-text">Sevkiyat yok</div></div>';
+  } catch(e) {
+    document.getElementById('bekleyenParcalar').innerHTML = `<div class="empty">Hata: ${e.message}</div>`;
+  }
+}
+
+function filtreSevkiyat(txt) { /* gerekirse eklenecek */ }
+
+// ═══════════════════════════════════════
+//  STOK
+// ═══════════════════════════════════════
+async function loadStok() {
+  document.getElementById('stokList').innerHTML = '<div class="loading"><div class="spinner"></div><span>Yükleniyor...</span></div>';
+  try {
+    const r = await api('POST', '/sorgu', {
+      sql: "SELECT stok_kodu, malzeme, adet, en, boy, kalinlik, kg, durum FROM stok ORDER BY malzeme",
+      params: []
+    });
+    _stokData = r.rows || [];
+    renderStok(_stokData);
+  } catch(e) {
+    document.getElementById('stokList').innerHTML = `<div class="empty">Hata: ${e.message}</div>`;
+  }
+}
+
+function renderStok(data) {
+  document.getElementById('stokList').innerHTML = data.length ?
+    `<div class="list-card">${data.map(s => `
+      <div class="list-item">
+        <div class="list-icon" style="background:${s.durum==1?'#fdecea':'#eafaf1'}">📦</div>
+        <div class="list-content">
+          <div class="list-title">${s.malzeme||'-'}</div>
+          <div class="list-sub">
+            ${s.stok_kodu ? s.stok_kodu+' · ' : ''}
+            ${s.en||0}×${s.boy||0}×${s.kalinlik||0}mm
+            · ${s.kg||0} kg
+          </div>
+        </div>
+        <span class="list-badge ${s.adet>0?'badge-tamamlandi':'badge-bekliyor'}">${s.adet||0} adet</span>
+      </div>`).join('')}</div>` :
+    '<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">Stok bulunamadı</div></div>';
+}
+
+function filtreStok(txt) {
+  txt = txt.toLowerCase();
+  renderStok(_stokData.filter(s =>
+    (s.malzeme||'').toLowerCase().includes(txt) ||
+    (s.stok_kodu||'').toLowerCase().includes(txt)));
+}
+
+// ═══════════════════════════════════════
+//  BAŞLAT
+// ═══════════════════════════════════════
+if (token) {
+  startApp();
+}
+</script>
+</body>
+</html>

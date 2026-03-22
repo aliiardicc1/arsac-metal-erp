@@ -3,9 +3,42 @@ Arsac Metal ERP — Cariler Modulu  (cariler.py)
 4 sekme: Musteriler | Tedarikciler | Borc/Alacak Takibi | Odeme Gecmisi
 """
 
-from styles import (DIALOG_QSS, INPUT, SAYFA_QSS, TABLO_QSS,
+from styles import (DIALOG_QSS, INPUT, SAYFA_QSS,
                     make_buton, tablo_sag_tik_menu_ekle,
                     BTN_PRIMARY, BTN_BLUE, BTN_GREEN, BTN_GRAY, BTN_ORANGE)
+
+TABLO_QSS = """
+    QTableWidget {
+        background: white; border-radius: 10px;
+        border: 1px solid #dcdde1; color: #2c3e50;
+        gridline-color: #f0f2f5; font-size: 13px;
+        selection-background-color: #2980b9;
+        selection-color: white;
+        alternate-background-color: #f8f9fa;
+    }
+    QTableWidget::item {
+        color: #2c3e50; padding: 5px 8px;
+        border-bottom: 1px solid #f0f2f5;
+    }
+    QTableWidget::item:selected {
+        background: #2980b9; color: white;
+    }
+    QTableWidget::item:selected:!active {
+        background: #5dade2; color: white;
+    }
+    QTableWidget::item:hover {
+        background: #eaf4fb; color: #2c3e50;
+    }
+    QHeaderView::section {
+        background: #2c3e50; color: white;
+        padding: 8px; font-weight: bold;
+        font-size: 12px; border: none;
+        border-right: 1px solid #3d5166;
+        min-height: 36px;
+    }
+    QHeaderView::section:last { border-right: none; }
+    QTableCornerButton::section { background: #2c3e50; border: none; }
+"""
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout,
     QLabel, QPushButton, QLineEdit, QTextEdit, QDoubleSpinBox,
@@ -92,17 +125,21 @@ def _tablo(headers, stretch_col=0):
 
 def _kart(baslik, deger, renk):
     f = QFrame()
-    f.setFixedHeight(64)
+    f.setMinimumHeight(72)
+    f.setMaximumHeight(90)
+    f.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
     f.setStyleSheet(
         "QFrame{{background:white;border-radius:8px;"
         "border:1px solid #e0e0e0;border-left:4px solid {r};}}".format(r=renk))
-    v = QVBoxLayout(f); v.setContentsMargins(12, 6, 12, 6); v.setSpacing(2)
+    v = QVBoxLayout(f); v.setContentsMargins(12, 8, 12, 8); v.setSpacing(4)
     lb = QLabel(baslik)
-    lb.setStyleSheet("color:#7f8c8d;font-size:10px;font-weight:bold;"
+    lb.setStyleSheet("color:#7f8c8d;font-size:11px;font-weight:bold;"
                      "letter-spacing:0.5px;background:transparent;")
+    lb.setWordWrap(True)
     ld = QLabel(str(deger))
-    ld.setStyleSheet("color:{r};font-size:14px;font-weight:900;"
+    ld.setStyleSheet("color:{r};font-size:15px;font-weight:900;"
                      "background:transparent;".format(r=renk))
+    ld.setWordWrap(True)
     v.addWidget(lb); v.addWidget(ld)
     return f
 
@@ -336,8 +373,21 @@ class _SolPanel(QWidget):
         if butonlar:
             btn_lay = QHBoxLayout(); btn_lay.setSpacing(6)
             for etiket, stil, fn in butonlar:
-                b = QPushButton(etiket); b.setFixedHeight(34)
-                b.setStyleSheet(stil); b.clicked.connect(fn)
+                b = QPushButton(etiket); b.setFixedHeight(36)
+                # Ekle butonu yeşil, Sil butonu kırmızı, diğerleri mavi
+                if "Ekle" in etiket or "+" in etiket:
+                    b.setStyleSheet(
+                        "QPushButton{background:#27ae60;color:white;border-radius:8px;"
+                        "padding:5px 14px;font-weight:bold;font-size:13px;border:none;}"
+                        "QPushButton:hover{background:#1e8449;}")
+                elif "Sil" in etiket:
+                    b.setStyleSheet(
+                        "QPushButton{background:#e74c3c;color:white;border-radius:8px;"
+                        "padding:5px 14px;font-weight:bold;font-size:13px;border:none;}"
+                        "QPushButton:hover{background:#c0392b;}")
+                else:
+                    b.setStyleSheet(stil)
+                b.clicked.connect(fn)
                 btn_lay.addWidget(b)
             lay.addLayout(btn_lay)
 

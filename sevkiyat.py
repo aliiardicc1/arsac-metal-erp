@@ -201,10 +201,325 @@ class YeniSevkDialog(QDialog):
 
             self.conn.commit()
             log_yaz(self.cursor, self.conn, "SEVKIYAT_OLUSTURULDU",
-                    f"{plaka} | {sofor} | {len(secili)} sipariş")
+                    f"{plaka} | {sofor} | {len(secili)} siparis")
+
+            # Wolvox aktarım sorusu
+            cevap = QMessageBox.question(
+                self, "Sevkiyat Olusturuldu",
+                "{} arac, {} sofor ile {} siparis sevk edildi.\n\n"
+                "Wolvox irsaliyesi olusturmak ister misiniz?".format(
+                    plaka, sofor, len(secili)),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No)
+
+            if cevap == QMessageBox.Yes:
+                self._wolvox_irsaliye_sev(sev_id, secili)
+
             self.accept()
         except Exception as e:
             QMessageBox.critical(self,"Hata",str(e))
+
+    def _wolvox_irsaliye_sev(self, sev_id, siparis_idler):
+        """Sevkiyat sonrasi Wolvox irsaliye dialog'u acar."""
+        # Parcalari veritabanindan al
+        parcalar = []
+        try:
+            for sid in siparis_idler:
+                # Once siparis bilgisini al
+                self.cursor.execute(
+                    "SELECT sip_no, musteri FROM siparisler WHERE id=?", (sid,))
+                sip_row = self.cursor.fetchone()
+                sip_no  = (sip_row[0] if isinstance(sip_row, (list,tuple)) else sip_row.get("sip_no","")) if sip_row else str(sid)
+                musteri = (sip_row[1] if isinstance(sip_row, (list,tuple)) else sip_row.get("musteri","")) if sip_row else ""
+
+                self.cursor.execute("""
+                    SELECT urun_adi, adet, kg, malzeme
+                    FROM siparis_kalemleri WHERE siparis_id=?
+                """, (sid,))
+                for row in self.cursor.fetchall():
+                    urun    = (row[0] if isinstance(row,(list,tuple)) else row.get("urun_adi","")) or ""
+                    adet    = (row[1] if isinstance(row,(list,tuple)) else row.get("adet",1)) or 1
+                    kg      = (row[2] if isinstance(row,(list,tuple)) else row.get("kg",0)) or 0
+                    malzeme = (row[3] if isinstance(row,(list,tuple)) else row.get("malzeme","")) or ""
+                    parcalar.append({
+                        "parca":   urun or malzeme or "-",
+                        "adet":    float(adet),
+                        "kg":      float(kg),
+                        "sip_no":  sip_no,
+                        "musteri": musteri,
+                    })
+        except Exception as e:
+            print("Parca yukle hatasi:", e)
+
+        if not parcalar:
+            QMessageBox.information(self, "Bilgi", "Aktarilacak kalem bulunamadi.")
+            return
+
+        # Detay dialog'u ac
+        dlg = WolvoxIrsaliyeDialog(parcalar, self)
+        if dlg.exec_() == QDialog.Accepted:
+            self._wolvox_excel_olustur(dlg.get_data())
+
+
+    def _wolvox_excel_olustur(self, data):
+        """Onaylanan veriyi Wolvox Excel formatinda kaydeder."""
+        from PyQt5.QtWidgets import QFileDialog
+        import os
+
+        dosya, _ = QFileDialog.getSaveFileName(
+            self, "Wolvox Irsaliye Kaydet",
+            "Wolvox_Irsaliye_{}.xlsx".format(
+                __import__("datetime").datetime.now().strftime("%Y%m%d_%H%M")),
+            "Excel Dosyasi (*.xlsx)")
+        if not dosya:
+            return
+
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Temp1"
+
+            basliklar = [
+                "Sira No", "Stok Kodu", "Stok Adi", "Miktari", "Birimi",
+                "Temel Mik.", "Temel Brm.", "Fiyati", "Birim 2 Fiyati",
+                "KDV Durumu", "KDV Hrc.Fiyat", "Ara Tutari", "KDV",
+                "KDV siz Toplam", "KDV li Toplam", "Vade Gunu", "Ek Bilgi 1", "Depo Adi"
+            ]
+
+            hdr_font  = Font(bold=True, color="FFFFFF", size=11)
+            hdr_fill  = PatternFill("solid", start_color="2C3E50")
+            hdr_align = Alignment(horizontal="center", vertical="center")
+            thin      = Side(style="thin", color="DDDDDD")
+            border    = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            for col, baslik in enumerate(basliklar, 1):
+                cell = ws.cell(row=1, column=col, value=baslik)
+                cell.font = hdr_font; cell.fill = hdr_fill
+                cell.alignment = hdr_align; cell.border = border
+            ws.row_dimensions[1].height = 24
+
+            genislikler = [8,14,30,10,8,10,8,12,12,10,12,12,8,14,14,10,20,14]
+            for i, g in enumerate(genislikler, 1):
+                ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = g
+
+            alt_font  = Font(size=11)
+            alt_align = Alignment(horizontal="center", vertical="center")
+
+            for idx, p in enumerate(data, 1):
+                row  = idx + 1
+                fill = PatternFill("solid", start_color="FFFFFF" if idx%2==1 else "F8F9FA")
+                degerler = [
+                    idx,
+                    p["stok_kodu"],
+                    p["parca"],
+                    p["miktar"],
+                    p["birim"],
+                    "", "", 0, 0,
+                    "Dahil", 0, 0, 20, 0, 0, 0,
+                    "{} - {}".format(p["sip_no"], p["musteri"]),
+                    "Merkez",
+                ]
+                for col, val in enumerate(degerler, 1):
+                    cell = ws.cell(row=row, column=col, value=val)
+                    cell.font = alt_font; cell.alignment = alt_align
+                    cell.fill = fill; cell.border = border
+                ws.row_dimensions[row].height = 22
+
+            wb.save(dosya)
+            cevap = QMessageBox.question(
+                self, "Basarili",
+                "{} kalem aktarildi!\n\nDosya acilsin mi?".format(len(data)),
+                QMessageBox.Yes | QMessageBox.No)
+            if cevap == QMessageBox.Yes:
+                try:
+                    import sys
+                    if sys.platform == "win32": os.startfile(dosya)
+                except: pass
+
+        except ImportError:
+            QMessageBox.critical(self, "Hata",
+                "openpyxl bulunamadi!\npip install openpyxl")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", "Excel olusturulamadi:\n{}".format(e))
+
+
+class WolvoxIrsaliyeDialog(QDialog):
+    """
+    Wolvox irsaliyesi hazirlanmadan once her kalem icin:
+    - Stok Kodu girisi
+    - Adet mi / KG mi secimi
+    sorar.
+    """
+    def __init__(self, parcalar, parent=None):
+        super().__init__(parent)
+        self.parcalar = parcalar
+        self.satirlar = []  # (stok_kodu_widget, miktar_widget, birim_widget)
+        self.setWindowTitle("Wolvox Irsaliye Hazirla")
+        self.setMinimumWidth(820)
+        self.setMinimumHeight(500)
+        self.setStyleSheet("""
+            QDialog{background:#f4f6f9;}
+            QLabel{color:#2c3e50;font-size:13px;}
+            QLineEdit,QComboBox{border:1.5px solid #dcdde1;border-radius:6px;
+                padding:5px 8px;background:white;color:#2c3e50;font-size:13px;}
+            QLineEdit:focus{border:1.5px solid #2980b9;}
+            QHeaderView::section{background:#2c3e50;color:white;padding:7px;
+                font-weight:bold;font-size:12px;border:none;}
+            QTableWidget{background:white;border:1px solid #dcdde1;
+                border-radius:8px;gridline-color:#f0f2f5;}
+            QTableWidget::item{padding:4px 6px;color:#2c3e50;}
+        """)
+        self._build()
+
+    def _build(self):
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(20, 16, 20, 16)
+        lay.setSpacing(12)
+
+        # Baslik
+        hdr = QHBoxLayout()
+        lbl = QLabel("Wolvox Irsaliye Kalemleri")
+        lbl.setStyleSheet("font-size:16px;font-weight:bold;color:#2c3e50;")
+        hdr.addWidget(lbl)
+        hdr.addStretch()
+
+        # Toplu birim secimi
+        lbl_toplu = QLabel("Hepsine Uygula:")
+        lbl_toplu.setStyleSheet("font-size:12px;color:#7f8c8d;")
+        hdr.addWidget(lbl_toplu)
+        self.cmb_toplu = QComboBox()
+        self.cmb_toplu.addItems(["Adet", "Kg"])
+        self.cmb_toplu.setFixedWidth(80)
+        self.cmb_toplu.setFixedHeight(32)
+        self.cmb_toplu.currentTextChanged.connect(self._toplu_birim)
+        hdr.addWidget(self.cmb_toplu)
+        lay.addLayout(hdr)
+
+        # Tablo
+        self.tablo = QTableWidget(len(self.parcalar), 5)
+        self.tablo.setHorizontalHeaderLabels([
+            "Stok Adi", "Siparis / Musteri", "Stok Kodu", "Miktar", "Birim (Adet/Kg)"
+        ])
+        self.tablo.verticalHeader().setVisible(False)
+        self.tablo.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.tablo.setSelectionMode(QTableWidget.NoSelection)
+        self.tablo.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tablo.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.tablo.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.tablo.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.tablo.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.tablo.verticalHeader().setDefaultSectionSize(40)
+        self.tablo.setAlternatingRowColors(True)
+
+        INP = "border:1.5px solid #dcdde1;border-radius:6px;padding:4px 8px;background:white;color:#2c3e50;font-size:13px;"
+
+        for i, p in enumerate(self.parcalar):
+            # Stok Adi (salt okunur)
+            it0 = QTableWidgetItem(p["parca"])
+            it0.setFlags(Qt.ItemIsEnabled)
+            self.tablo.setItem(i, 0, it0)
+
+            # Siparis / Musteri
+            it1 = QTableWidgetItem("{} - {}".format(p["sip_no"], p["musteri"]))
+            it1.setFlags(Qt.ItemIsEnabled)
+            it1.setForeground(QColor("#7f8c8d"))
+            self.tablo.setItem(i, 1, it1)
+
+            # Stok Kodu girisi
+            txt_kod = QLineEdit()
+            txt_kod.setPlaceholderText("Stok kodu girin...")
+            txt_kod.setFixedHeight(32)
+            txt_kod.setStyleSheet(INP)
+            self.tablo.setCellWidget(i, 2, txt_kod)
+
+            # Miktar
+            txt_mik = QLineEdit()
+            txt_mik.setFixedHeight(32)
+            txt_mik.setStyleSheet(INP)
+            txt_mik.setFixedWidth(80)
+            txt_mik.setPlaceholderText("0")
+            # Varsayilan: adet
+            txt_mik.setText("{:g}".format(p["adet"]))
+            self.tablo.setCellWidget(i, 3, txt_mik)
+
+            # Birim secimi
+            cmb = QComboBox()
+            cmb.addItems(["Adet", "Kg"])
+            cmb.setFixedHeight(32)
+            cmb.setFixedWidth(80)
+            # Kg dolu ise Kg'a sec
+            if float(p.get("kg", 0) or 0) > 0:
+                cmb.setCurrentText("Kg")
+                txt_mik.setText("{:g}".format(float(p["kg"])))
+            # Birim degisince miktari guncelle
+            def _birim_degisti(birim, mik_w=txt_mik, parca=p):
+                if birim == "Kg":
+                    mik_w.setText("{:g}".format(float(parca.get("kg",0) or 0)))
+                else:
+                    mik_w.setText("{:g}".format(float(parca.get("adet",1) or 1)))
+            cmb.currentTextChanged.connect(_birim_degisti)
+            self.tablo.setCellWidget(i, 4, cmb)
+
+            self.satirlar.append((txt_kod, txt_mik, cmb))
+
+        lay.addWidget(self.tablo)
+
+        # Bilgi notu
+        not_lbl = QLabel("* Stok kodu bos birakilabilir, Wolvox'ta eslestirebilirsiniz.")
+        not_lbl.setStyleSheet("font-size:11px;color:#95a5a6;")
+        lay.addWidget(not_lbl)
+
+        # Butonlar
+        btn_lay = QHBoxLayout()
+        btn_lay.addStretch()
+        btn_iptal = QPushButton("Iptal")
+        btn_iptal.setFixedHeight(38)
+        btn_iptal.setStyleSheet("background:#dcdde1;color:#2c3e50;border-radius:8px;"
+                                "padding:6px 20px;font-weight:bold;border:none;")
+        btn_iptal.clicked.connect(self.reject)
+
+        btn_olustur = QPushButton("Excel Olustur")
+        btn_olustur.setFixedHeight(38)
+        btn_olustur.setStyleSheet("background:#8e44ad;color:white;border-radius:8px;"
+                                  "padding:6px 24px;font-weight:bold;font-size:13px;border:none;")
+        btn_olustur.clicked.connect(self.accept)
+        btn_lay.addWidget(btn_iptal)
+        btn_lay.addWidget(btn_olustur)
+        lay.addLayout(btn_lay)
+
+    def _toplu_birim(self, birim):
+        """Tum satirlara ayni birimi uygula."""
+        for i, (_, mik_w, cmb) in enumerate(self.satirlar):
+            cmb.blockSignals(True)
+            cmb.setCurrentText(birim)
+            cmb.blockSignals(False)
+            p = self.parcalar[i]
+            if birim == "Kg":
+                mik_w.setText("{:g}".format(float(p.get("kg",0) or 0)))
+            else:
+                mik_w.setText("{:g}".format(float(p.get("adet",1) or 1)))
+
+    def get_data(self):
+        """Dialog onaylaninca hazirlanmis veriyi dondur."""
+        sonuc = []
+        for i, (kod_w, mik_w, cmb) in enumerate(self.satirlar):
+            p = self.parcalar[i]
+            try:
+                mik = float(mik_w.text().replace(",",".")) if mik_w.text().strip() else 0
+            except:
+                mik = 0
+            sonuc.append({
+                "parca":     p["parca"],
+                "stok_kodu": kod_w.text().strip(),
+                "miktar":    mik,
+                "birim":     cmb.currentText(),
+                "sip_no":    p["sip_no"],
+                "musteri":   p["musteri"],
+            })
+        return sonuc
 
 
 class SevkiyatSayfasi(QWidget):
@@ -247,6 +562,12 @@ class SevkiyatSayfasi(QWidget):
         btn_excel_sev.clicked.connect(self._excel_export)
         ust.addWidget(btn_excel_sev)
 
+        btn_wolvox = QPushButton("📄 Wolvox İrsaliyesi")
+        btn_wolvox.setFixedHeight(38)
+        btn_wolvox.setStyleSheet("background:#8e44ad;color:white;border-radius:8px;font-weight:bold;font-size:12px;padding:4px 14px;border:none;")
+        btn_wolvox.clicked.connect(self._wolvox_irsaliye)
+        ust.addWidget(btn_wolvox)
+
         btn_yenile = QPushButton("Yenile")
         btn_yenile.setFixedHeight(38)
         btn_yenile.setStyleSheet("background:#dcdde1;color:#2c3e50;border-radius:8px;font-weight:bold;font-size:12px;padding:4px 14px;border:none;")
@@ -264,23 +585,46 @@ class SevkiyatSayfasi(QWidget):
             QTabBar::tab:selected{background:#e67e22;color:white;}
         """)
 
-        # Sekme 1: Bekleyen Parçalar (üretimden gelen)
-        t1 = QWidget(); t1l = QVBoxLayout(t1); t1l.setContentsMargins(10,10,10,10); t1l.setSpacing(6)
+        # ── Sekme 1: Sipariş Bazlı Üretimden Gelenler ──────────────
+        t1 = QWidget(); t1l = QVBoxLayout(t1)
+        t1l.setContentsMargins(10,10,10,10); t1l.setSpacing(6)
 
         # Üst araç çubuğu
-        t1h = QHBoxLayout()
-        lbl_info = QLabel("Uretimi tamamlanan ve sevkiyat bekleyen parcalar")
-        lbl_info.setStyleSheet("color:#7f8c8d;font-size:12px;")
-        t1h.addWidget(lbl_info); t1h.addStretch()
+        t1h = QHBoxLayout(); t1h.setSpacing(6)
+
+        # Arama kutusu
+        self.txt_ara_parca = QLineEdit()
+        self.txt_ara_parca.setPlaceholderText("🔍  Siparis no, musteri veya parca adi ara...")
+        self.txt_ara_parca.setFixedHeight(32)
+        self.txt_ara_parca.setStyleSheet(
+            "border:1.5px solid #dcdde1;border-radius:7px;padding:5px 10px;"
+            "background:white;color:#2c3e50;font-size:12px;")
+        self.txt_ara_parca.textChanged.connect(self._filtrele_parca)
+        t1h.addWidget(self.txt_ara_parca)
+
+        # Filtre: tüm siparişler veya tek sipariş
+        self.cmb_sip_filtre = QComboBox()
+        self.cmb_sip_filtre.addItem("Tum Siparisler")
+        self.cmb_sip_filtre.setFixedHeight(32)
+        self.cmb_sip_filtre.setFixedWidth(200)
+        self.cmb_sip_filtre.setStyleSheet(
+            "border:1.5px solid #dcdde1;border-radius:6px;padding:4px 8px;"
+            "background:white;color:#2c3e50;font-size:12px;")
+        self.cmb_sip_filtre.currentTextChanged.connect(self._sip_filtre_degisti)
+        t1h.addWidget(self.cmb_sip_filtre)
 
         btn_tumunu_sec = QPushButton("Tumunu Sec")
-        btn_tumunu_sec.setFixedHeight(30)
-        btn_tumunu_sec.setStyleSheet("background:#ecf0f1;color:#2c3e50;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:bold;border:1px solid #dcdde1;")
+        btn_tumunu_sec.setFixedHeight(32)
+        btn_tumunu_sec.setStyleSheet(
+            "background:#ecf0f1;color:#2c3e50;border-radius:6px;"
+            "padding:5px 12px;font-size:12px;font-weight:bold;border:1px solid #dcdde1;")
         btn_tumunu_sec.clicked.connect(self._tumunu_sec)
 
         self.btn_secili_sevk = QPushButton("Secilileri Sevk Et")
-        self.btn_secili_sevk.setFixedHeight(30)
-        self.btn_secili_sevk.setStyleSheet("background:#8e44ad;color:white;border-radius:6px;padding:5px 14px;font-size:12px;font-weight:bold;border:none;")
+        self.btn_secili_sevk.setFixedHeight(32)
+        self.btn_secili_sevk.setStyleSheet(
+            "background:#8e44ad;color:white;border-radius:6px;"
+            "padding:5px 14px;font-size:12px;font-weight:bold;border:none;")
         self.btn_secili_sevk.clicked.connect(self._secilileri_sevk_et)
         self.btn_secili_sevk.setEnabled(False)
 
@@ -288,31 +632,46 @@ class SevkiyatSayfasi(QWidget):
         t1h.addWidget(self.btn_secili_sevk)
         t1l.addLayout(t1h)
 
-        self.tablo_parca = QTableWidget(0, 6)
+        # Ana tablo: sipariş gruplu
+        self.tablo_parca = QTableWidget(0, 7)
         tablo_sag_tik_menu_ekle(self.tablo_parca)
         self.tablo_parca.setHorizontalHeaderLabels(
-            ["", "Siparis No", "Musteri", "Parca Adi", "Adet", "Tarih"])
+            ["", "Siparis No", "Musteri", "Parca Adi", "Adet", "Tamamlanan", "Tarih"])
         self.tablo_parca.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
         self.tablo_parca.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self.tablo_parca.setColumnWidth(0, 36)
-        for c in [1,2,4,5]:
+        for c in [1,2,4,5,6]:
             self.tablo_parca.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
         self.tablo_parca.setEditTriggers(QTableWidget.NoEditTriggers)
         self.tablo_parca.verticalHeader().setVisible(False)
-        self.tablo_parca.setShowGrid(False)
+        self.tablo_parca.setShowGrid(True)
         self.tablo_parca.setAlternatingRowColors(True)
         self.tablo_parca.verticalHeader().setDefaultSectionSize(40)
+        self.tablo_parca.setSelectionBehavior(QTableWidget.SelectRows)
         self.tablo_parca.setStyleSheet("""
-            QTableWidget{background:white;color:#2c3e50;}
+            QTableWidget{background:white;color:#2c3e50;gridline-color:#f0f2f5;}
             QTableWidget::item{color:#2c3e50;padding:5px;}
-            QHeaderView::section{background:#2c3e50;color:white;padding:8px;font-weight:bold;border:none;}
+            QTableWidget::item:selected{background:#8e44ad;color:white;}
+            QHeaderView::section{background:#2c3e50;color:white;padding:8px;
+                font-weight:bold;border:none;border-right:1px solid #3d5166;}
             QTableWidget::item:alternate{background:#f8f9fa;}
         """)
         t1l.addWidget(self.tablo_parca)
-        self.tabs.addTab(t1, "Bekleyen Parcalar")
+        self.tabs.addTab(t1, "Uretimden Gelenler")
 
-        # Sekme 2: Hazır Siparişler (eski davranış)
-        t2 = QWidget(); t2l = QVBoxLayout(t2); t2l.setContentsMargins(10,10,10,10)
+        # Sekme 2: Hazır Siparişler
+        t2 = QWidget(); t2l = QVBoxLayout(t2); t2l.setContentsMargins(10,10,10,10); t2l.setSpacing(6)
+        t2h = QHBoxLayout()
+        self.txt_ara_hazir = QLineEdit()
+        self.txt_ara_hazir.setPlaceholderText("🔍  Siparis no veya musteri ara...")
+        self.txt_ara_hazir.setFixedHeight(32)
+        self.txt_ara_hazir.setStyleSheet(
+            "border:1.5px solid #dcdde1;border-radius:7px;padding:5px 10px;"
+            "background:white;color:#2c3e50;font-size:12px;")
+        self.txt_ara_hazir.textChanged.connect(self._filtrele_hazir)
+        t2h.addWidget(self.txt_ara_hazir)
+        t2h.addStretch()
+        t2l.addLayout(t2h)
         self.tablo_hazir = QTableWidget(0,5)
         tablo_sag_tik_menu_ekle(self.tablo_hazir)
         self.tablo_hazir.setHorizontalHeaderLabels(["SIPARIS NO","MUSTERI","TERMIN","TOPLAM","ISLEM"])
@@ -326,7 +685,18 @@ class SevkiyatSayfasi(QWidget):
         self.tabs.addTab(t2, "Hazir Siparisler")
 
         # Sekme 3: Sevkiyat Geçmişi
-        t3 = QWidget(); t3l = QVBoxLayout(t3); t3l.setContentsMargins(10,10,10,10)
+        t3 = QWidget(); t3l = QVBoxLayout(t3); t3l.setContentsMargins(10,10,10,10); t3l.setSpacing(6)
+        t3h = QHBoxLayout()
+        self.txt_ara_sev = QLineEdit()
+        self.txt_ara_sev.setPlaceholderText("🔍  Plaka, sofor veya siparis no ara...")
+        self.txt_ara_sev.setFixedHeight(32)
+        self.txt_ara_sev.setStyleSheet(
+            "border:1.5px solid #dcdde1;border-radius:7px;padding:5px 10px;"
+            "background:white;color:#2c3e50;font-size:12px;")
+        self.txt_ara_sev.textChanged.connect(self._filtrele_sev)
+        t3h.addWidget(self.txt_ara_sev)
+        t3h.addStretch()
+        t3l.addLayout(t3h)
         self.tablo_sev = QTableWidget(0,6)
         tablo_sag_tik_menu_ekle(self.tablo_sev)
         self.tablo_sev.setHorizontalHeaderLabels(["TARIH","PLAKA","SOFOR","TELEFON","SIPARISLER","DURUM"])
@@ -370,6 +740,178 @@ class SevkiyatSayfasi(QWidget):
     def _set_kart(self, k, v):
         k.findChild(QLabel,"Val").setText(str(v))
 
+    def _tablo_parca_doldur(self, filtre_sip_no=None):
+        """
+        Bekleyen parcalari siparis bazli gruplu goster.
+        Ayni siparisten gelen parcalar renk gruplamasiyla birarada.
+        filtre_sip_no: belirli bir siparisi filtrele (None=hepsi)
+        """
+        self.tablo_parca.setRowCount(0)
+        self.btn_secili_sevk.setEnabled(False)
+
+        try:
+            # Unik siparisler
+            self.cursor.execute("""
+                SELECT DISTINCT sip_no, musteri
+                FROM parca_sevk_bekliyor
+                WHERE durum='Bekliyor'
+                ORDER BY sip_no
+            """)
+            siparisler = self.cursor.fetchall()
+
+            # Filtre dropdown guncelle
+            self.cmb_sip_filtre.blockSignals(True)
+            mevcut = self.cmb_sip_filtre.currentText()
+            self.cmb_sip_filtre.clear()
+            self.cmb_sip_filtre.addItem("Tum Siparisler")
+            for row in siparisler:
+                sno = row[0] if isinstance(row, (list,tuple)) else row.get("sip_no","")
+                mus = row[1] if isinstance(row, (list,tuple)) else row.get("musteri","")
+                self.cmb_sip_filtre.addItem("{} — {}".format(sno, mus))
+            # Onceki secimi koru
+            idx = self.cmb_sip_filtre.findText(mevcut)
+            if idx >= 0:
+                self.cmb_sip_filtre.setCurrentIndex(idx)
+            self.cmb_sip_filtre.blockSignals(False)
+
+            # Renk paleti — her siparis farkli arka plan
+            GRUP_RENK = ["#EAF4FB","#EAFAF1","#FEF9E7","#F5EEF8","#FDEDEC","#EBF5FB"]
+
+            satir = 0
+            for g_idx, sip_row in enumerate(siparisler):
+                sno = sip_row[0] if isinstance(sip_row,(list,tuple)) else sip_row.get("sip_no","")
+                mus = sip_row[1] if isinstance(sip_row,(list,tuple)) else sip_row.get("musteri","")
+
+                # Filtre uygula
+                if filtre_sip_no and filtre_sip_no != "Tum Siparisler":
+                    if "{} — {}".format(sno, mus) != filtre_sip_no:
+                        continue
+
+                grup_renk = GRUP_RENK[g_idx % len(GRUP_RENK)]
+
+                # Grup baslik satiri
+                self.tablo_parca.insertRow(satir)
+                self.tablo_parca.setRowHeight(satir, 32)
+
+                # Checkbox - grup basliginda yok
+                self.tablo_parca.setCellWidget(satir, 0, None)
+
+                baslik_it = QTableWidgetItem("  {} — {}".format(sno, mus))
+                baslik_it.setFont(__import__('PyQt5.QtGui', fromlist=['QFont']).QFont(
+                    "Segoe UI", 11, __import__('PyQt5.QtGui', fromlist=['QFont']).QFont.Bold))
+                baslik_it.setBackground(QColor("#2C3E50"))
+                baslik_it.setForeground(QColor("#FFFFFF"))
+                baslik_it.setFlags(Qt.ItemIsEnabled)
+                self.tablo_parca.setSpan(satir, 0, 1, 7)
+                self.tablo_parca.setItem(satir, 0, baslik_it)
+                satir += 1
+
+                # Parcalari getir
+                self.cursor.execute("""
+                    SELECT id, parca_adi, bekleyen_adet, tamamlanan_adet, tarih
+                    FROM parca_sevk_bekliyor
+                    WHERE durum='Bekliyor' AND sip_no=?
+                    ORDER BY id
+                """, (sno,))
+                parcalar = self.cursor.fetchall()
+
+                for p_row in parcalar:
+                    psb_id  = p_row[0] if isinstance(p_row,(list,tuple)) else p_row.get("id")
+                    pad     = p_row[1] if isinstance(p_row,(list,tuple)) else p_row.get("parca_adi","")
+                    bek_adet= p_row[2] if isinstance(p_row,(list,tuple)) else p_row.get("bekleyen_adet",0)
+                    tam_adet= p_row[3] if isinstance(p_row,(list,tuple)) else p_row.get("tamamlanan_adet",0)
+                    tarih   = p_row[4] if isinstance(p_row,(list,tuple)) else p_row.get("tarih","")
+
+                    self.tablo_parca.insertRow(satir)
+                    self.tablo_parca.setRowHeight(satir, 40)
+
+                    # Checkbox
+                    chk = QCheckBox()
+                    chk.setStyleSheet("margin-left:10px;")
+                    chk.setProperty("psb_id", psb_id)
+                    chk.stateChanged.connect(self._secim_degisti)
+                    self.tablo_parca.setCellWidget(satir, 0, chk)
+
+                    # Veriler
+                    vals = [sno, mus, pad or "-",
+                            "{:g}".format(float(bek_adet or 0)),
+                            "{:g}".format(float(tam_adet or 0)),
+                            tarih or "-"]
+                    for j, v in enumerate(vals):
+                        it = QTableWidgetItem(v)
+                        it.setTextAlignment(Qt.AlignCenter)
+                        it.setData(Qt.UserRole, psb_id)
+                        it.setBackground(QColor(grup_renk))
+                        # Parca adi sola yasla
+                        if j == 2:
+                            it.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                        self.tablo_parca.setItem(satir, j+1, it)
+
+                    satir += 1
+
+        except Exception as e:
+            print("tablo_parca_doldur HATA:", e)
+            import traceback; traceback.print_exc()
+
+    def _filtrele_parca(self, txt):
+        """Parca tablosunda arama — grup baslik satirlarini gizleme."""
+        txt = txt.lower().strip()
+        for i in range(self.tablo_parca.rowCount()):
+            # Grup baslik satiri mi? (span varsa)
+            span = self.tablo_parca.columnSpan(i, 0)
+            if span > 1:
+                # Baslik satirini her zaman goster
+                self.tablo_parca.setRowHidden(i, False)
+                continue
+            if not txt:
+                self.tablo_parca.setRowHidden(i, False)
+                continue
+            # Tum sutunlarda ara
+            gizle = True
+            for c in range(1, self.tablo_parca.columnCount()):
+                it = self.tablo_parca.item(i, c)
+                if it and txt in it.text().lower():
+                    gizle = False
+                    break
+            self.tablo_parca.setRowHidden(i, gizle)
+
+    def _filtrele_hazir(self, txt):
+        """Hazir siparisler tablosunda arama."""
+        txt = txt.lower().strip()
+        for i in range(self.tablo_hazir.rowCount()):
+            if not txt:
+                self.tablo_hazir.setRowHidden(i, False)
+                continue
+            gizle = True
+            for c in range(self.tablo_hazir.columnCount()):
+                it = self.tablo_hazir.item(i, c)
+                if it and txt in it.text().lower():
+                    gizle = False
+                    break
+            self.tablo_hazir.setRowHidden(i, gizle)
+
+    def _filtrele_sev(self, txt):
+        """Sevkiyat gecmisi tablosunda arama."""
+        txt = txt.lower().strip()
+        for i in range(self.tablo_sev.rowCount()):
+            if not txt:
+                self.tablo_sev.setRowHidden(i, False)
+                continue
+            gizle = True
+            for c in range(self.tablo_sev.columnCount()):
+                it = self.tablo_sev.item(i, c)
+                if it and txt in it.text().lower():
+                    gizle = False
+                    break
+            self.tablo_sev.setRowHidden(i, gizle)
+
+    def _sip_filtre_degisti(self, text):
+        """Filtre dropdown degisince tabloyu yenile."""
+        if text == "Tum Siparisler":
+            self._tablo_parca_doldur(None)
+        else:
+            self._tablo_parca_doldur(text)
+
     def _excel_export(self):
         if not excel_kaydet:
             return
@@ -382,6 +924,168 @@ class SevkiyatSayfasi(QWidget):
         except Exception as e:
             print("Sevkiyat excel hatasi:", e)
         excel_kaydet(self, "Sevkiyatlar", sutunlar, satirlar)
+
+    def _wolvox_irsaliye(self):
+        """
+        Seçili sevkiyattaki parçaları Wolvox İrsaliye Excel şablonuna aktar.
+        Seçili satır yoksa tüm bekleyen parçaları alır.
+        """
+        from PyQt5.QtWidgets import QFileDialog
+        import os
+
+        # Seçili parçaları topla
+        parcalar = []
+
+        # Önce tablo_parca'daki seçili/işaretli satırlara bak
+        for i in range(self.tablo_parca.rowCount()):
+            chk_widget = self.tablo_parca.cellWidget(i, 0)
+            chk = chk_widget.findChild(QCheckBox) if chk_widget else None
+            if chk and chk.isChecked():
+                sip_no   = self.tablo_parca.item(i, 1).text() if self.tablo_parca.item(i, 1) else ""
+                musteri  = self.tablo_parca.item(i, 2).text() if self.tablo_parca.item(i, 2) else ""
+                parca    = self.tablo_parca.item(i, 3).text() if self.tablo_parca.item(i, 3) else ""
+                adet     = self.tablo_parca.item(i, 4).text() if self.tablo_parca.item(i, 4) else "0"
+                parcalar.append({
+                    "sip_no":  sip_no,
+                    "musteri": musteri,
+                    "parca":   parca,
+                    "adet":    adet,
+                })
+
+        # Hiç seçili yoksa tüm bekleyenleri al
+        if not parcalar:
+            try:
+                self.cursor.execute("""
+                    SELECT sip_no, musteri, parca_adi, bekleyen_adet
+                    FROM parca_sevk_bekliyor WHERE durum='Bekliyor'
+                    ORDER BY sip_no, id
+                """)
+                for row in self.cursor.fetchall():
+                    parcalar.append({
+                        "sip_no":  row[0] or "",
+                        "musteri": row[1] or "",
+                        "parca":   row[2] or "",
+                        "adet":    str(row[3] or 0),
+                    })
+            except Exception as e:
+                QMessageBox.warning(self, "Hata", "Parca verileri alinamadi:\n{}".format(e))
+                return
+
+        if not parcalar:
+            QMessageBox.information(self, "Bilgi", "Sevk edilecek parça bulunamadı.")
+            return
+
+        # Kayıt yeri sor
+        dosya, _ = QFileDialog.getSaveFileName(
+            self, "Wolvox İrsaliye Dosyasını Kaydet",
+            "Wolvox_Irsaliye_{}.xlsx".format(
+                __import__('datetime').datetime.now().strftime("%Y%m%d_%H%M")),
+            "Excel Dosyası (*.xlsx)")
+
+        if not dosya:
+            return
+
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Temp1"
+
+            # Başlık satırı — Wolvox şablonu formatı
+            basliklar = [
+                "Sıra No", "Stok Kodu", "Stok Adı", "Miktarı", "Birimi",
+                "Temel Mik.", "Temel Brm.", "Fiyatı", "Birim 2 Fiyatı",
+                "KDV Durumu", "KDV Hrc.Fiyat", "Ara Tutarı", "KDV",
+                "KDV siz Toplam", "KDV li Toplam", "Vade Günü", "Ek Bilgi 1", "Depo Adı"
+            ]
+
+            # Başlık stili
+            hdr_font  = Font(bold=True, color="FFFFFF", size=11)
+            hdr_fill  = PatternFill("solid", start_color="2C3E50")
+            hdr_align = Alignment(horizontal="center", vertical="center")
+            thin      = Side(style="thin", color="DDDDDD")
+            border    = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            for col, baslik in enumerate(basliklar, 1):
+                cell = ws.cell(row=1, column=col, value=baslik)
+                cell.font      = hdr_font
+                cell.fill      = hdr_fill
+                cell.alignment = hdr_align
+                cell.border    = border
+
+            ws.row_dimensions[1].height = 24
+
+            # Sütun genişlikleri
+            genislikler = [8, 14, 30, 10, 8, 10, 8, 12, 12, 10, 12, 12, 8, 14, 14, 10, 20, 14]
+            for i, g in enumerate(genislikler, 1):
+                ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = g
+
+            # Satır stilleri
+            alt_font   = Font(size=11)
+            alt_align  = Alignment(horizontal="center", vertical="center")
+            fill_tek   = PatternFill("solid", start_color="FFFFFF")
+            fill_cift  = PatternFill("solid", start_color="F8F9FA")
+
+            # Veri satırları
+            for idx, p in enumerate(parcalar, 1):
+                row = idx + 1
+                fill = fill_tek if idx % 2 == 1 else fill_cift
+
+                degerler = [
+                    idx,           # Sıra No
+                    "",            # Stok Kodu — Wolvox'ta elle eşleştirilir
+                    p["parca"],    # Stok Adı
+                    float(p["adet"]) if p["adet"] else 1,  # Miktarı
+                    "Adet",        # Birimi
+                    "",            # Temel Mik.
+                    "",            # Temel Brm.
+                    0,             # Fiyatı
+                    0,             # Birim 2 Fiyatı
+                    "Dahil",       # KDV Durumu
+                    0,             # KDV Hrc.Fiyat
+                    0,             # Ara Tutarı
+                    20,            # KDV (%)
+                    0,             # KDV siz Toplam
+                    0,             # KDV li Toplam
+                    0,             # Vade Günü
+                    "{} - {}".format(p["sip_no"], p["musteri"]),  # Ek Bilgi 1
+                    "Merkez",      # Depo Adı
+                ]
+
+                for col, val in enumerate(degerler, 1):
+                    cell = ws.cell(row=row, column=col, value=val)
+                    cell.font      = alt_font
+                    cell.alignment = alt_align
+                    cell.fill      = fill
+                    cell.border    = border
+
+                ws.row_dimensions[row].height = 22
+
+            wb.save(dosya)
+
+            cevap = QMessageBox.question(
+                self, "✅ Başarılı",
+                "{} parca Wolvox formatina aktarildi!\n\nDosya: {}\n\nDosyayi simdi acmak ister misiniz?".format(
+                    len(parcalar), dosya),
+                QMessageBox.Yes | QMessageBox.No)
+
+            if cevap == QMessageBox.Yes:
+                try:
+                    import subprocess, sys
+                    if sys.platform == "win32":
+                        os.startfile(dosya)
+                    else:
+                        subprocess.Popen(["xdg-open", dosya])
+                except:
+                    pass
+
+        except ImportError:
+            QMessageBox.critical(self, "Hata",
+                "openpyxl kutuphanesi bulunamadi!\n\nKomut istemcisinde sunu calistirin:\npip install openpyxl")
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", "Irsaliye olusturulamadi:\n{}".format(e))
 
     def yenile(self):
         try:
@@ -399,31 +1103,8 @@ class SevkiyatSayfasi(QWidget):
                 "SELECT COUNT(*) FROM sevkiyatlar WHERE durum='Teslim Edildi'")
             self._set_kart(self.k_teslim, self.cursor.fetchone()[0])
 
-            # Sekme 1: Bekleyen Parçalar
-            self.cursor.execute("""
-                SELECT id, sip_no, musteri, parca_adi, bekleyen_adet, tarih
-                FROM parca_sevk_bekliyor WHERE durum='Bekliyor'
-                ORDER BY sip_no, id
-            """)
-            self.tablo_parca.setRowCount(0)
-            for i, (psb_id, sno, mus, pad, adet, tarih) in enumerate(
-                    self.cursor.fetchall()):
-                self.tablo_parca.insertRow(i)
-                self.tablo_parca.setRowHeight(i, 40)
-
-                # Checkbox
-                chk = QCheckBox(); chk.setStyleSheet("margin-left:10px;")
-                chk.stateChanged.connect(self._secim_degisti)
-                self.tablo_parca.setCellWidget(i, 0, chk)
-
-                for j, v in enumerate([sno or "-", mus or "-", pad or "-",
-                                        "{:g}".format(float(adet or 0)), tarih or "-"]):
-                    it = QTableWidgetItem(v)
-                    it.setTextAlignment(Qt.AlignCenter)
-                    it.setData(Qt.UserRole, psb_id)
-                    self.tablo_parca.setItem(i, j+1, it)
-
-            self.btn_secili_sevk.setEnabled(False)
+            # Sekme 1: Uretimden Gelenler — siparis bazli gruplu
+            self._tablo_parca_doldur()
 
             # Sekme 2: Hazır Siparişler
             self.cursor.execute("""

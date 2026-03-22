@@ -91,11 +91,13 @@ class AnalizSayfasi(QWidget):
         # Sekmeli tablolar
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
-            QTabWidget::pane{border:1px solid #dcdde1;border-radius:8px;background:white;
-            color: #2c3e50;}
-            QTabBar::tab{background:#ecf0f1;color:#2c3e50;padding:8px 20px;
-                         border-radius:6px 6px 0 0;font-weight:bold;font-size:13px;}
+            QTabWidget::pane{border:1px solid #dcdde1;border-radius:8px;background:white;}
+            QTabBar::tab{background:#ecf0f1;color:#2c3e50;padding:8px 14px;
+                         border-radius:6px 6px 0 0;font-weight:bold;font-size:12px;
+                         min-width:80px;}
             QTabBar::tab:selected{background:#c0392b;color:white;}
+            QTabBar::tab:hover:!selected{background:#d5d8dc;}
+            QTabBar{alignment:left;}
         """)
 
         # Sekme 1: En cok siparis veren musteriler
@@ -127,15 +129,19 @@ class AnalizSayfasi(QWidget):
         lay.addWidget(self.tabs)
 
     def _kart(self, baslik, deger, renk):
-        f = QFrame(); f.setFixedHeight(72)
+        f = QFrame()
+        f.setMinimumHeight(80)
+        f.setMaximumHeight(100)
+        f.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         f.setStyleSheet(
             "QFrame{{background:white;border-radius:10px;border:1px solid #dcdde1;"
             "border-left:5px solid {r};}}".format(r=renk))
-        v = QVBoxLayout(f); v.setContentsMargins(12, 6, 12, 6); v.setSpacing(2)
+        v = QVBoxLayout(f); v.setContentsMargins(12, 8, 12, 8); v.setSpacing(4)
         lb = QLabel(baslik)
-        lb.setStyleSheet("color:#7f8c8d;font-size:10px;font-weight:bold;background:transparent;")
+        lb.setStyleSheet("color:#7f8c8d;font-size:11px;font-weight:bold;background:transparent;")
+        lb.setWordWrap(True)
         ld = QLabel(deger)
-        ld.setStyleSheet("color:{};font-size:17px;font-weight:900;background:transparent;".format(renk))
+        ld.setStyleSheet("color:{};font-size:20px;font-weight:900;background:transparent;".format(renk))
         ld.setObjectName("val")
         v.addWidget(lb); v.addWidget(ld); return f
 

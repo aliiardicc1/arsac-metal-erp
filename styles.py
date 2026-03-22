@@ -123,43 +123,60 @@ QPushButton:disabled {
 }
 
 /* ── Tablo ── */
-QTableWidget {
+QTableWidget, QTableView {
     color: #2c3e50;
     background: white;
-    gridline-color: transparent;
+    gridline-color: #f0f2f5;
     border: 1px solid #dcdde1;
     border-radius: 8px;
     font-size: 13px;
+    selection-background-color: #2980b9;
+    selection-color: white;
+    alternate-background-color: #f8f9fa;
 }
-QTableWidget::item {
+QTableWidget::item, QTableView::item {
     color: #2c3e50;
-    padding: 6px 10px;
-    min-height: 36px;
+    padding: 4px 8px;
+    min-height: 32px;
     border-bottom: 1px solid #f0f2f5;
 }
-QTableWidget::item:selected {
+QTableWidget::item:selected, QTableView::item:selected {
     background: #2980b9;
     color: white;
 }
-QTableWidget::item:alternate {
-    background: #f8f9fa;
+QTableWidget::item:selected:!active, QTableView::item:selected:!active {
+    background: #5dade2;
+    color: white;
+}
+QTableWidget::item:hover, QTableView::item:hover {
+    background: #eaf4fb;
+    color: #2c3e50;
+}
+QHeaderView {
+    background: #2c3e50;
 }
 QHeaderView::section {
     background: #2c3e50;
     color: white;
-    padding: 9px 10px;
+    padding: 8px 8px;
     font-weight: bold;
     font-size: 12px;
     border: none;
     border-right: 1px solid #3d5166;
-    min-height: 38px;
+    min-height: 36px;
 }
 QHeaderView::section:last {
     border-right: none;
 }
+QHeaderView::section:hover {
+    background: #34495e;
+}
 QTableWidget QLineEdit {
     color: #2c3e50;
     background: white;
+    border: 1.5px solid #2980b9;
+    border-radius: 4px;
+    padding: 2px 6px;
 }
 QTableCornerButton::section {
     background: #2c3e50;
@@ -631,6 +648,48 @@ def tablo_sutun_ayarla(tablo, stretch_col=0, min_genislikler=None):
     """
     from PyQt5.QtWidgets import QHeaderView
     h = tablo.horizontalHeader()
+    for c in range(tablo.columnCount()):
+        if c == stretch_col:
+            h.setSectionResizeMode(c, QHeaderView.Stretch)
+        else:
+            h.setSectionResizeMode(c, QHeaderView.ResizeToContents)
+            if min_genislikler and c in min_genislikler:
+                tablo.setColumnWidth(c, max(
+                    min_genislikler[c],
+                    tablo.columnWidth(c)))
+
+
+def tablo_hazirla(tablo, stretch_col=0, min_genislikler=None,
+                  coklu_secim=True, satir_yuksekligi=34):
+    """
+    Tablo için tüm standart ayarları tek seferde uygular.
+    Tüm modüllerde tutarlı görünüm sağlar.
+
+    Kullanım:
+        from styles import tablo_hazirla
+        tablo_hazirla(self.tablo, stretch_col=2)
+    """
+    from PyQt5.QtWidgets import QHeaderView, QAbstractItemView
+    from PyQt5.QtCore import Qt
+
+    # Genel tablo ayarları
+    tablo.setAlternatingRowColors(True)
+    tablo.setShowGrid(True)
+    tablo.setWordWrap(False)
+    tablo.verticalHeader().setVisible(False)
+    tablo.setSelectionBehavior(QAbstractItemView.SelectRows)
+    tablo.verticalHeader().setDefaultSectionSize(satir_yuksekligi)
+
+    # Çoklu / tekli seçim
+    if coklu_secim:
+        tablo.setSelectionMode(QAbstractItemView.ExtendedSelection)
+    else:
+        tablo.setSelectionMode(QAbstractItemView.SingleSelection)
+
+    # Sütun genişlikleri
+    h = tablo.horizontalHeader()
+    h.setStretchLastSection(False)
+    h.setHighlightSections(False)
     for c in range(tablo.columnCount()):
         if c == stretch_col:
             h.setSectionResizeMode(c, QHeaderView.Stretch)

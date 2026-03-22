@@ -560,11 +560,19 @@ class UretimSayfasi(QWidget):
 
         # Filtre
         flay = QHBoxLayout(); flay.setSpacing(8)
-        self.txt_ara = QLineEdit(); self.txt_ara.setPlaceholderText("Is no veya musteri ara...")
-        self.txt_ara.setFixedHeight(36); self.txt_ara.setStyleSheet(INPUT)
+        self.txt_ara = QLineEdit()
+        self.txt_ara.setPlaceholderText("🔍  Is no, musteri veya parca adi ara...")
+        self.txt_ara.setFixedHeight(36)
+        self.txt_ara.setStyleSheet(
+            "border:1.5px solid #dcdde1;border-radius:7px;padding:5px 12px;"
+            "background:white;color:#2c3e50;font-size:13px;")
         self.txt_ara.textChanged.connect(self._filtrele)
-        self.cmb_fil = QComboBox(); self.cmb_fil.addItems(["Tumu"] + DURUMLAR)
-        self.cmb_fil.setFixedSize(140, 36); self.cmb_fil.setStyleSheet(INPUT)
+        self.cmb_fil = QComboBox()
+        self.cmb_fil.addItems(["Tumu"] + DURUMLAR)
+        self.cmb_fil.setFixedSize(150, 36)
+        self.cmb_fil.setStyleSheet(
+            "border:1.5px solid #dcdde1;border-radius:7px;padding:5px 8px;"
+            "background:white;color:#2c3e50;font-size:13px;")
         self.cmb_fil.currentTextChanged.connect(self._filtrele)
         flay.addWidget(self.txt_ara); flay.addWidget(self.cmb_fil)
         lay.addLayout(flay)
