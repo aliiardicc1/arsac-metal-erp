@@ -413,7 +413,12 @@ class KullaniciYonetimiDialog(QDialog):
         try:
             if BULUT_MODU:
                 from database_bulut import _get
-                rows = _get("/kullanicilar_hepsi")
+                sonuc = _get("/kullanicilar_hepsi")
+                # API {"kullanicilar": [...]} formatinda donuyor
+                if isinstance(sonuc, dict):
+                    rows = sonuc.get("kullanicilar", [])
+                else:
+                    rows = sonuc or []
             else:
                 self.cursor.execute("SELECT id, kullanici_adi, ad_soyad, rol, aktif FROM kullanicilar ORDER BY id")
                 rows = self.cursor.fetchall()
