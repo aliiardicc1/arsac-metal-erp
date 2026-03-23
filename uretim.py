@@ -13,7 +13,7 @@ try:
 except:
     def log_yaz(c, n, i, d=""): pass
 
-DURUMLAR   = ["Beklemede", "Uretimde", "Tamamlandi", "Iptal"]
+DURUMLAR   = ["Beklemede", "Uretimde", "Tamamlandi", "Siparis Donustu", "Teklif", "Iptal"]
 INPUT  = "border:1.5px solid #dcdde1;border-radius:7px;padding:5px 10px;font-size:13px;background:white;color:#2c3e50;"
 STL_PRI    = "background:#8e44ad;color:white;border-radius:8px;padding:7px 18px;font-weight:bold;font-size:13px;border:none;"
 STL_BLUE   = "background:#2980b9;color:white;border-radius:8px;padding:7px 16px;font-weight:bold;font-size:13px;border:none;"
@@ -581,9 +581,19 @@ class UretimSayfasi(QWidget):
         self.tablo = _tablo(
             ["Is No", "Musteri", "Tarih", "Termin", "Kg", "Ilerleme", "Durum", "Islem"],
             stretch_col=1)
-        self.tablo.setColumnWidth(5, 120)
-        self.tablo.setColumnWidth(6, 130)  # Durum sütunu
-        self.tablo.setColumnWidth(7, 200)  # Islem sütunu
+        # Sütun genişlikleri — içeriğe göre otomatik
+        hdr = self.tablo.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # Is No
+        hdr.setSectionResizeMode(1, QHeaderView.Stretch)           # Musteri
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Tarih
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Termin
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Kg
+        hdr.setSectionResizeMode(5, QHeaderView.Fixed)             # Ilerleme
+        hdr.setSectionResizeMode(6, QHeaderView.Fixed)             # Durum
+        hdr.setSectionResizeMode(7, QHeaderView.Fixed)             # Islem
+        self.tablo.setColumnWidth(5, 110)
+        self.tablo.setColumnWidth(6, 145)
+        self.tablo.setColumnWidth(7, 190)
         self.tablo.verticalHeader().setDefaultSectionSize(44)
         lay.addWidget(self.tablo)
 
