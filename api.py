@@ -14,7 +14,6 @@ import hashlib
 import secrets
 import psycopg2
 import psycopg2.extras
-from psycopg2 import pool as pg_pool
 import os
 from datetime import datetime
 
@@ -41,31 +40,13 @@ DB_CONFIG = {
     "password": os.environ.get("DB_PASS", "arsac2024"),
 }
 
-_pool = None
-
-def _pool_al():
-    global _pool
-    if _pool is None:
-        _pool = pg_pool.ThreadedConnectionPool(minconn=2, maxconn=10, **DB_CONFIG)
-    return _pool
-
 def get_db():
+    conn = psycopg2.connect(**DB_CONFIG)
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        p = _pool_al()
-        conn = p.getconn()
-        conn.autocommit = False
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        try:
-            yield conn, cursor
-        finally:
-            p.putconn(conn)
-    except Exception:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        try:
-            yield conn, cursor
-        finally:
-            conn.close()
+        yield conn, cursor
+    finally:
+        conn.close()
 
 # ═══════════════════════════════════════════════════════════════
 #  TOKEN DEPOSU (bellekte — yeniden başlatınca sıfırlanır)
@@ -170,7 +151,7 @@ def giris(istek: GirisIstek, db=Depends(get_db)):
 
     # Log
     cursor.execute(
-        "INSERT INTO kullanici_log (zaman, kullanici, islem, detay) VALUES (%s, %s, %s, %s)",
+        "INSERT INTO kullanici_log (tarih, kullanici, islem, detay) VALUES (%s, %s, %s, %s)",
         (datetime.now().strftime("%d.%m.%Y %H:%M"), istek.kullanici_adi, "giris", "Basarili giris"))
     conn.commit()
 
@@ -390,3 +371,58 @@ def ozet(kullanici: str = Depends(token_dogrula), db=Depends(get_db)):
         "kritik_stok":          say("stok", "WHERE miktar <= min_miktar AND min_miktar > 0"),
         "toplam_musteri":       say("musteriler", "WHERE aktif=1"),
     }
+
+@app.get("/kullanicilar_hepsi")
+def kullanicilar_hepsi(token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
+    token_dogrula(token)
+    conn, cursor = db
+    cursor.execute("SELECT id, kullanici_adi, ad_soyad, rol, aktif FROM kullanicilar ORDER BY id")
+    return {"kullanicilar": cursor.fetchall()}
+
+@app.post("/kullanici_ekle")
+def kullanici_ekle(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
+    token_dogrula(token)
+    conn, cursor = db
+    kadi = istek.get("kullanici_adi")
+    sifre = istek.get("sifre")
+    rol = istek.get("rol", "personel")
+    ad = istek.get("ad_soyad", "")
+    h = _sifre_hash(sifre)
+    cursor.execute("INSERT INTO kullanicilar (kullanici_adi, sifre_hash, rol, ad_soyad, aktif) VALUES (%s,%s,%s,%s,1)", (kadi, h, rol, ad))
+    conn.commit()
+    return {"durum": "ok"}
+
+@app.post("/sifre_degistir")
+def sifre_degistir(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
+    token_dogrula(token)
+    conn, cursor = db
+    kadi = istek.get("kullanici_adi")
+    sifre = istek.get("sifre")
+    h = _sifre_hash(sifre)
+    cursor.execute("UPDATE kullanicilar SET sifre_hash=%s WHERE kullanici_adi=%s", (h, kadi))
+    conn.commit()
+    return {"durum": "ok"}
+
+@app.post("/rol_degistir")
+def rol_degistir(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
+    token_dogrula(token)
+    conn, cursor = db
+    cursor.execute("UPDATE kullanicilar SET rol=%s WHERE kullanici_adi=%s", (istek.get("rol"), istek.get("kullanici_adi")))
+    conn.commit()
+    return {"durum": "ok"}
+
+@app.post("/durum_degistir")
+def durum_degistir(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
+    token_dogrula(token)
+    conn, cursor = db
+    cursor.execute("UPDATE kullanicilar SET aktif=%s WHERE kullanici_adi=%s", (istek.get("aktif"), istek.get("kullanici_adi")))
+    conn.commit()
+    return {"durum": "ok"}
+
+@app.post("/kullanici_sil")
+def kullanici_sil(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
+    token_dogrula(token)
+    conn, cursor = db
+    cursor.execute("DELETE FROM kullanicilar WHERE kullanici_adi=%s", (istek.get("kullanici_adi"),))
+    conn.commit()
+    return {"durum": "ok"}
