@@ -373,15 +373,15 @@ def ozet(kullanici: str = Depends(token_dogrula), db=Depends(get_db)):
     }
 
 @app.get("/kullanicilar_hepsi")
-def kullanicilar_hepsi(token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
-    token_dogrula(token)
+def kullanicilar_hepsi(authorization: str = Header(...), db=Depends(get_db)):
+    token_dogrula(authorization)
     conn, cursor = db
     cursor.execute("SELECT id, kullanici_adi, ad_soyad, rol, aktif FROM kullanicilar ORDER BY id")
     return {"kullanicilar": cursor.fetchall()}
 
 @app.post("/kullanici_ekle")
 def kullanici_ekle(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
-    token_dogrula(token)
+    token_dogrula(authorization)
     conn, cursor = db
     kadi = istek.get("kullanici_adi")
     sifre = istek.get("sifre")
@@ -393,8 +393,8 @@ def kullanici_ekle(istek: dict, token: str = Header(None, alias="Authorization")
     return {"durum": "ok"}
 
 @app.post("/sifre_degistir")
-def sifre_degistir(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
-    token_dogrula(token)
+def sifre_degistir(istek: dict, authorization: str = Header(...), db=Depends(get_db)):
+    token_dogrula(authorization)
     conn, cursor = db
     kadi = istek.get("kullanici_adi")
     sifre = istek.get("sifre")
@@ -404,25 +404,82 @@ def sifre_degistir(istek: dict, token: str = Header(None, alias="Authorization")
     return {"durum": "ok"}
 
 @app.post("/rol_degistir")
-def rol_degistir(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
-    token_dogrula(token)
+def rol_degistir(istek: dict, authorization: str = Header(...), db=Depends(get_db)):
+    token_dogrula(authorization)
     conn, cursor = db
     cursor.execute("UPDATE kullanicilar SET rol=%s WHERE kullanici_adi=%s", (istek.get("rol"), istek.get("kullanici_adi")))
     conn.commit()
     return {"durum": "ok"}
 
 @app.post("/durum_degistir")
-def durum_degistir(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
-    token_dogrula(token)
+def durum_degistir(istek: dict, authorization: str = Header(...), db=Depends(get_db)):
+    token_dogrula(authorization)
     conn, cursor = db
     cursor.execute("UPDATE kullanicilar SET aktif=%s WHERE kullanici_adi=%s", (istek.get("aktif"), istek.get("kullanici_adi")))
     conn.commit()
     return {"durum": "ok"}
 
 @app.post("/kullanici_sil")
-def kullanici_sil(istek: dict, token: str = Header(None, alias="Authorization"), db=Depends(get_db)):
-    token_dogrula(token)
+def kullanici_sil(istek: dict, authorization: str = Header(...), db=Depends(get_db)):
+    token_dogrula(authorization)
     conn, cursor = db
     cursor.execute("DELETE FROM kullanicilar WHERE kullanici_adi=%s", (istek.get("kullanici_adi"),))
+    conn.commit()
+    return {"durum": "ok"}
+
+@app.post("/sorgu")
+def sorgu(istek: dict, authorization: str = Header(...), db=Depends(get_db)):
+    token_dogrula(authorization)
+    conn, cursor = db
+    sql = istek.get("sql", "")
+    params = istek.get("params", [])
+    
+    # SQLite -> PostgreSQL syntax donusumu
+    sql = sql.replace("?", "%s")
+    sql = sql.replace("date('now')", "CURRENT_DATE")
+    sql = sql.replace("date(%s, '-7 days')", "(CURRENT_DATE - INTERVAL '7 days')")
+    sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+    sql = sql.replace("INSERT OR REPLACE INTO", "INSERT INTO")
+    
+    import re
+    sql = re.sub(r"HAVING\s+(\w+)\s+<", r"HAVING SUM(\1) <", sql)
+    
+    try:
+        cursor.execute(sql, params)
+        try:
+            rows = cursor.fetchall()
+            result_rows = [dict(r) for r in rows]
+        except:
+            result_rows = []
+        conn.commit()
+        return {
+            "rows": result_rows,
+            "rowcount": cursor.rowcount,
+            "lastrowid": cursor.lastrowid if hasattr(cursor, 'lastrowid') else None
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/izinler/{kullanici_adi}")
+def izinler_getir(kullanici_adi: str, authorization: str = Header(...), db=Depends(get_db)):
+    token_dogrula(authorization)
+    conn, cursor = db
+    cursor.execute("SELECT modul, goruntule, duzenle FROM kullanici_izinler WHERE kullanici_adi=%s", (kullanici_adi,))
+    rows = cursor.fetchall()
+    return {r["modul"]: [r["goruntule"], r["duzenle"]] for r in rows}
+
+@app.post("/izinler/{kullanici_adi}")
+def izinler_kaydet(kullanici_adi: str, istek: dict, authorization: str = Header(...), db=Depends(get_db)):
+    token_dogrula(authorization)
+    conn, cursor = db
+    for modul, val in istek.items():
+        g = int(val[0]) if isinstance(val, (list,tuple)) else int(val)
+        d = int(val[1]) if isinstance(val, (list,tuple)) and len(val)>1 else 0
+        cursor.execute("""
+            INSERT INTO kullanici_izinler (kullanici_adi, modul, goruntule, duzenle)
+            VALUES (%s,%s,%s,%s)
+            ON CONFLICT (kullanici_adi, modul) DO UPDATE SET goruntule=%s, duzenle=%s
+        """, (kullanici_adi, modul, g, d, g, d))
     conn.commit()
     return {"durum": "ok"}
