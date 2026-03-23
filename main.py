@@ -301,7 +301,7 @@ class ArsacMetalApp(QWidget):
             _ekle(self.s_talep, "talep")
 
         if izin_var(IZ, "siparisler"):
-            self.s_siparis = SiparisSayfasi(self.cursor, self.conn, self.user_role, self.kullanici_adi)
+            self.s_siparis = SiparisSayfasi(self.cursor, self.conn, self.user_role, self.kullanici_adi, self.izinler)
             _ekle(self.s_siparis, "siparis")
 
         if izin_var(IZ, "uretim"):

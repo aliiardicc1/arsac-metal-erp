@@ -1181,10 +1181,11 @@ class KismiSevkDialog(QDialog):
 
 # ─── Ana Sipariş Sayfası ──────────────────────────────────────
 class SiparisSayfasi(QWidget):
-    def __init__(self, cursor, conn, user_role, kullanici_adi):
+    def __init__(self, cursor, conn, user_role, kullanici_adi, izinler=None):
         super().__init__()
         self.cursor = cursor; self.conn = conn
         self.user_role = user_role; self.kullanici_adi = kullanici_adi
+        self.izinler = izinler or {}
         self.setStyleSheet("QWidget{background:#f4f6f9;font-family:'Segoe UI';}")
         self._build()
         self.yenile()
@@ -1197,7 +1198,10 @@ class SiparisSayfasi(QWidget):
         lbl = QLabel("SİPARİŞLER")
         lbl.setStyleSheet("font-size:18px;font-weight:900;color:#2c3e50;")
         hdr.addWidget(lbl); hdr.addStretch()
-        if self.user_role in ("yonetici", "satis"):
+        # Rol veya izin ile kontrol - duzenle izni varsa buton görünür
+        _siparis_duzenle = (self.user_role in ("yonetici", "satis") or
+                            (hasattr(self, 'izinler') and izin_var(self.izinler, "siparisler", "duzenle")))
+        if _siparis_duzenle:
             btn_y = QPushButton("+ Yeni Siparis"); btn_y.setFixedHeight(38)
             btn_y.setStyleSheet(STL["btn_primary"]); btn_y.clicked.connect(self._yeni)
             hdr.addWidget(btn_y)
