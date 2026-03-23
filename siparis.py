@@ -411,7 +411,7 @@ class SiparisDetayDialog(QDialog):
             ig.addWidget(QLabel(l1), row, 0); ig.addWidget(w1, row, 1)
             ig.addWidget(QLabel(l2), row, 2); ig.addWidget(w2, row, 3)
 
-        if self.user_role in ("yonetici", "satis", "uretim", "sevkiyat"):
+        if True:  # Tum roller gorebilir
             ig.addWidget(QLabel("Durum:"), 3, 0); ig.addWidget(self.cmb_durum, 3, 1)
             btn_g = QPushButton("Guncelle"); btn_g.setFixedHeight(34)
             btn_g.setStyleSheet(STL["btn_blue"])
@@ -444,7 +444,7 @@ class SiparisDetayDialog(QDialog):
         self.lbl_parca_ozet.setStyleSheet("color:#7f8c8d;font-size:12px;")
         th.addWidget(self.lbl_parca_ozet); th.addStretch()
 
-        if self.user_role in ("yonetici", "satis"):
+        if self.user_role in ("yonetici", "satis", "uretim"):
             btn_parca_ekle = QPushButton("+ Manuel Parca Ekle")
             btn_parca_ekle.setFixedHeight(32); btn_parca_ekle.setStyleSheet(STL["btn_green"])
             btn_parca_ekle.clicked.connect(self._manuel_parca_ekle); th.addWidget(btn_parca_ekle)
@@ -498,7 +498,7 @@ class SiparisDetayDialog(QDialog):
         self.lbl_sv_ozet = QLabel()
         self.lbl_sv_ozet.setStyleSheet("color:#7f8c8d;font-size:12px;")
         h3.addWidget(self.lbl_sv_ozet); h3.addStretch()
-        if self.user_role in ("yonetici", "sevkiyat"):
+        if self.user_role in ("yonetici", "satis", "sevkiyat"):
             btn_ks = QPushButton("Kismi Sevkiyat"); btn_ks.setStyleSheet(STL["btn_blue"])
             btn_ks.setFixedHeight(32); btn_ks.clicked.connect(self._kismi_sevkiyat)
             h3.addWidget(btn_ks)
