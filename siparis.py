@@ -1269,13 +1269,15 @@ class SiparisSayfasi(QWidget):
         lay.addLayout(flay)
 
         # Tablo
-        self.tablo = QTableWidget(0, 7)
+        self.tablo = QTableWidget(0, 8)
         tablo_sag_tik_menu_ekle(self.tablo)
         self.tablo.setHorizontalHeaderLabels(
-            ["Siparis No", "Tarih", "Musteri", "Yetkili", "Durum", "Termin", "Tutar (TL)"])
+            ["Siparis No", "Tarih", "Musteri", "Yetkili", "Durum", "Termin", "Tutar (TL)", "Islem"])
         self.tablo.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         for c in [0, 1, 3, 4, 5, 6]:
             self.tablo.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        self.tablo.horizontalHeader().setSectionResizeMode(7, QHeaderView.Fixed)
+        self.tablo.setColumnWidth(7, 130)
         self.tablo.setEditTriggers(QTableWidget.NoEditTriggers)
         self.tablo.setAlternatingRowColors(True); self.tablo.setShowGrid(False)
         self.tablo.verticalHeader().setVisible(False)
@@ -1345,9 +1347,51 @@ class SiparisSayfasi(QWidget):
                     "color:{fc};background:{bg};font-weight:bold;font-size:12px;"
                     "border-radius:6px;border:1px solid {fc};".format(fc=fc, bg=bg))
                 self.tablo.setCellWidget(i, 4, db)
+                # Sil butonu
+                if self.user_role in ("yonetici", "satis", "uretim"):
+                    bw = QWidget(); bl = QHBoxLayout(bw)
+                    bl.setContentsMargins(2,2,2,2); bl.setSpacing(4)
+                    btn_iptal = QPushButton("İptal")
+                    btn_iptal.setFixedHeight(28)
+                    btn_iptal.setStyleSheet("background:#e67e22;color:white;border-radius:4px;font-size:11px;border:none;padding:2px 8px;")
+                    btn_iptal.clicked.connect(lambda _, s=sid, sn=sno: self._siparis_iptal(s, sn))
+                    btn_sil = QPushButton("Sil")
+                    btn_sil.setFixedHeight(28)
+                    btn_sil.setStyleSheet("background:#e74c3c;color:white;border-radius:4px;font-size:11px;border:none;padding:2px 8px;")
+                    btn_sil.clicked.connect(lambda _, s=sid, sn=sno: self._siparis_sil(s, sn))
+                    bl.addWidget(btn_iptal); bl.addWidget(btn_sil)
+                    self.tablo.setCellWidget(i, 7, bw)
             self._filtrele()
         except Exception as e:
             print("Siparis yenile hatasi:", e)
+
+    def _siparis_iptal(self, sid, sno):
+        """Siparişi İptal durumuna çeker."""
+        cevap = QMessageBox.question(self, "İptal",
+            "{} numaralı siparişi iptal etmek istiyor musunuz?".format(sno),
+            QMessageBox.Yes | QMessageBox.No)
+        if cevap == QMessageBox.Yes:
+            try:
+                self.cursor.execute("UPDATE siparisler SET durum='Iptal' WHERE id=?", (sid,))
+                self.conn.commit()
+                self.yenile()
+                QMessageBox.information(self, "Tamam", "{} iptal edildi.".format(sno))
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", str(e))
+
+    def _siparis_sil(self, sid, sno):
+        """Siparişi tamamen siler."""
+        cevap = QMessageBox.question(self, "Sil",
+            "{} numaralı siparişi KALICI olarak silmek istiyor musunuz?\n\nBu işlem geri alınamaz!".format(sno),
+            QMessageBox.Yes | QMessageBox.No)
+        if cevap == QMessageBox.Yes:
+            try:
+                self.cursor.execute("DELETE FROM siparis_kalemleri WHERE siparis_id=?", (sid,))
+                self.cursor.execute("DELETE FROM siparisler WHERE id=?", (sid,))
+                self.conn.commit()
+                self.yenile()
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", str(e))
 
     def _filtrele(self):
         txt   = self.txt_ara.text().lower()
