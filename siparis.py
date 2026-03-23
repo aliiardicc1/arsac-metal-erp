@@ -1236,7 +1236,7 @@ class SiparisSayfasi(QWidget):
         # Rol veya izin ile kontrol - duzenle izni varsa buton görünür
         _izin = self.izinler.get("siparisler", (0,0))
         _duzenle_izni = bool(_izin[1]) if isinstance(_izin, (list,tuple)) and len(_izin)>1 else False
-        _siparis_duzenle = self.user_role in ("yonetici", "satis") or _duzenle_izni
+        _siparis_duzenle = self.user_role in ("yonetici", "satis", "uretim") or _duzenle_izni
         if _siparis_duzenle:
             btn_y = QPushButton("+ Yeni Siparis"); btn_y.setFixedHeight(38)
             btn_y.setStyleSheet(STL["btn_primary"]); btn_y.clicked.connect(self._yeni)
