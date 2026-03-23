@@ -412,13 +412,20 @@ class KullaniciYonetimiDialog(QDialog):
     def yenile(self):
         try:
             if BULUT_MODU:
-                from database_bulut import _get
-                sonuc = _get("/kullanicilar_hepsi")
-                # API {"kullanicilar": [...]} formatinda donuyor
+                from database_bulut import API_URL, _token
+                import urllib.request, json
+                req = urllib.request.Request(
+                    API_URL + "/kullanicilar_hepsi",
+                    headers={"Authorization": "Bearer " + (_token or "")}
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    sonuc = json.loads(r.read().decode())
                 if isinstance(sonuc, dict):
                     rows = sonuc.get("kullanicilar", [])
+                elif isinstance(sonuc, list):
+                    rows = sonuc
                 else:
-                    rows = sonuc or []
+                    rows = []
             else:
                 self.cursor.execute("SELECT id, kullanici_adi, ad_soyad, rol, aktif FROM kullanicilar ORDER BY id")
                 rows = self.cursor.fetchall()
@@ -454,9 +461,20 @@ class KullaniciYonetimiDialog(QDialog):
     def _izin_yukle(self, kullanici_adi):
         try:
             if BULUT_MODU:
-                from database_bulut import _get
-                izinler_raw = _get("/izinler/{}".format(kullanici_adi))
-                izinler = {m: (bool(v[0]), bool(v[1])) for m, v in izinler_raw.items()}
+                from database_bulut import API_URL, _token
+                import urllib.request, json
+                req = urllib.request.Request(
+                    API_URL + "/izinler/{}".format(kullanici_adi),
+                    headers={"Authorization": "Bearer " + (_token or "")}
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    izinler_raw = json.loads(r.read().decode())
+                if isinstance(izinler_raw, dict):
+                    izinler = {m: (bool(v[0]) if isinstance(v,(list,tuple)) else bool(v), 
+                                   bool(v[1]) if isinstance(v,(list,tuple)) else False) 
+                               for m, v in izinler_raw.items()}
+                else:
+                    izinler = {}
             else:
                 self.cursor.execute(
                     "SELECT modul, goruntule, duzenle FROM kullanici_izinler WHERE kullanici_adi=?",
@@ -493,8 +511,18 @@ class KullaniciYonetimiDialog(QDialog):
                 izinler[modul_key] = (int(g), int(d))
 
             if BULUT_MODU:
-                from database_bulut import _post
-                _post("/izinler/{}".format(self.secili_kullanici), izinler)
+                from database_bulut import API_URL, _token
+                import urllib.request, json
+                body = json.dumps(izinler).encode("utf-8")
+                req = urllib.request.Request(
+                    API_URL + "/izinler/{}".format(self.secili_kullanici),
+                    data=body,
+                    headers={"Content-Type": "application/json",
+                             "Authorization": "Bearer " + (_token or "")},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    r.read()
             else:
                 for modul, (g, d) in izinler.items():
                     self.cursor.execute("""
@@ -532,8 +560,18 @@ class KullaniciYonetimiDialog(QDialog):
                 izinler[modul] = (g, d)
 
             if BULUT_MODU:
-                from database_bulut import _post
-                _post("/izinler/{}".format(self.secili_kullanici), izinler)
+                from database_bulut import API_URL, _token
+                import urllib.request, json
+                body = json.dumps(izinler).encode("utf-8")
+                req = urllib.request.Request(
+                    API_URL + "/izinler/{}".format(self.secili_kullanici),
+                    data=body,
+                    headers={"Content-Type": "application/json",
+                             "Authorization": "Bearer " + (_token or "")},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    r.read()
             else:
                 for modul, (g, d) in izinler.items():
                     self.cursor.execute("""
