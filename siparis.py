@@ -205,12 +205,27 @@ class YeniSiparisDialog(QDialog):
         bh.addWidget(bi); bh.addWidget(bk); lay.addLayout(bh)
 
     def _sip_no_uret(self):
-        yil = datetime.now().strftime("%Y")
+        """Eski sistem formatında sipariş numarası üretir: ARSC00646"""
+        # En yüksek ARSC numarasını bul
         self.cursor.execute(
-            "SELECT COUNT(*) FROM siparisler WHERE sip_no LIKE ?",
-            ("ARSC-{}-%" .format(yil),))
-        n = self.cursor.fetchone()[0]
-        return "ARSC-{}-{:04d}".format(yil, n + 1)
+            "SELECT sip_no FROM siparisler WHERE sip_no LIKE 'ARSC%' ORDER BY id DESC LIMIT 1")
+        row = self.cursor.fetchone()
+        if row:
+            try:
+                sip_no = row[0] if isinstance(row, (list,tuple)) else row.get("sip_no","")
+                # ARSC00645 formatından sayıyı çıkar
+                import re as _re
+                m = _re.search(r'ARSC(\d+)', sip_no)
+                if m:
+                    n = int(m.group(1))
+                    return "ARSC{:05d}".format(n + 1)
+            except:
+                pass
+        # Hiç sipariş yoksa ARSC00001'den başla
+        self.cursor.execute("SELECT COUNT(*) FROM siparisler")
+        row = self.cursor.fetchone()
+        n = row[0] if isinstance(row, (list,tuple)) else list(row.values())[0] if row else 0
+        return "ARSC{:05d}".format(int(n or 0) + 1)
 
     def _kaydet(self):
         musteri = self.txt_musteri.text().strip()
