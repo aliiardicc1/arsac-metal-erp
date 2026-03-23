@@ -463,6 +463,11 @@ class SiparisDetayDialog(QDialog):
             btn_klasor.setFixedHeight(32); btn_klasor.setStyleSheet(STL["btn_blue"])
             btn_klasor.clicked.connect(self._klasoru_ac); th.addWidget(btn_klasor)
 
+            btn_mcsv = QPushButton("Metalix CSV")
+            btn_mcsv.setFixedHeight(32)
+            btn_mcsv.setStyleSheet("background:#8e44ad;color:white;border-radius:6px;font-weight:bold;border:none;padding:4px 10px;")
+            btn_mcsv.clicked.connect(self._csv_olustur_metalix); th.addWidget(btn_mcsv)
+
         t1l.addLayout(th)
         self.tbl_parca = self._tablo(
             ["Parca Adi", "Kalinlik", "En", "Boy", "Adet", "Kg", "Durum", "Islem"])
@@ -1076,6 +1081,28 @@ class SiparisDetayDialog(QDialog):
             print("Otomatik is emri hatasi:", e)
 
     # ─── DXF İzleme ──────────────────────────────────────────
+    def _csv_olustur_metalix(self):
+        """Klasördeki DXF/DWG dosyalarını tarayıp Metalix CSV oluşturur."""
+        try:
+            if not METALIX_OK:
+                QMessageBox.warning(self, "Bilgi", "metalix.py bulunamadi."); return
+            from metalix import metalix_csv_olustur, siparis_klasor_yolu
+            klasor = siparis_klasor_yolu(self._sip_no, self._musteri)
+            if not os.path.exists(klasor):
+                QMessageBox.warning(self, "Klasor Yok",
+                    "Klasor bulunamadi:\n{}".format(klasor)); return
+            csv_yolu, hata = metalix_csv_olustur(klasor, self._sip_no, self._musteri)
+            if hata:
+                QMessageBox.warning(self, "Hata", hata); return
+            cevap = QMessageBox.question(self, "CSV Olusturuldu",
+                "Metalix CSV dosyasi olusturuldu!\n\n{}\n\nDosyayi acmak ister misiniz?".format(csv_yolu),
+                QMessageBox.Yes | QMessageBox.No)
+            if cevap == QMessageBox.Yes:
+                import subprocess
+                subprocess.Popen(["explorer", "/select,", csv_yolu])
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", str(e))
+
     def _klasoru_ac(self):
         try:
             if not METALIX_OK:

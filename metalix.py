@@ -50,6 +50,122 @@ def siparis_klasor_yolu(sip_no, musteri):
 
 
 # ── Sipariş Bilgi Kartı (.txt) ──
+
+
+# ── Metalix CSV Oluşturma ──────────────────────────────────────
+def _dosya_adini_parse(dosya_adi):
+    """
+    Dosya adından malzeme, kalınlık ve adet bilgisini çıkarır.
+    Örnek: EMNİYET MAPASI_10MM_2ADET.dwg → (ST37, 10, 2)
+    Örnek: PARCA_ST52_15MM_4ADET.dwg     → (ST52, 15, 4)
+    """
+    import re
+    ad = re.sub(r'\.(dxf|dwg)$', '', dosya_adi, flags=re.IGNORECASE).strip()
+    
+    # Malzeme: ST37, ST52, S355 gibi
+    malzeme = "ST37"
+    m = re.search(r'_(ST\d+|S\d+|DKP|HARDOX|STAINLESS|304|316)_', ad, re.IGNORECASE)
+    if m:
+        malzeme = m.group(1).upper()
+    
+    # Kalınlık: 10MM, 15MM gibi
+    kalinlik = 0
+    m = re.search(r'_(\d+(?:[.,]\d+)?)MM_', ad, re.IGNORECASE)
+    if m:
+        try:
+            kalinlik = float(m.group(1).replace(',', '.'))
+        except:
+            kalinlik = 0
+    
+    # Adet: 2ADET, 4ADET gibi
+    adet = 1
+    m = re.search(r'_(\d+)ADET', ad, re.IGNORECASE)
+    if m:
+        try:
+            adet = int(m.group(1))
+        except:
+            adet = 1
+    
+    return malzeme, kalinlik, adet
+
+
+def metalix_csv_olustur(klasor, sip_no, musteri):
+    """
+    Klasördeki DXF/DWG dosyalarını tarayıp Metalix CSV formatında dosya oluşturur.
+    Döner: (csv_yolu, hata) 
+    """
+    import os, re
+    
+    # DXF/DWG dosyalarını tara
+    dosyalar = []
+    
+    # Ana klasör
+    if os.path.isdir(klasor):
+        for f in os.listdir(klasor):
+            if f.lower().endswith(('.dxf', '.dwg')):
+                dosyalar.append(os.path.join(klasor, f))
+    
+    # DOSYALAR alt klasörü
+    dosyalar_alt = os.path.join(klasor, "DOSYALAR")
+    if os.path.isdir(dosyalar_alt):
+        for f in os.listdir(dosyalar_alt):
+            if f.lower().endswith(('.dxf', '.dwg')):
+                dosyalar.append(os.path.join(dosyalar_alt, f))
+    
+    # DWG alt klasörü
+    dwg_alt = os.path.join(klasor, "DWG")
+    if os.path.isdir(dwg_alt):
+        for f in os.listdir(dwg_alt):
+            if f.lower().endswith(('.dxf', '.dwg')):
+                dosyalar.append(os.path.join(dwg_alt, f))
+    
+    if not dosyalar:
+        return None, "Klasörde DXF/DWG dosyası bulunamadı!\n{}".format(klasor)
+    
+    # CSV oluştur
+    csv_yolu = os.path.join(klasor, "{}.csv".format(sip_no))
+    
+    try:
+        satirlar = []
+        # BOM + header
+        satirlar.append("\ufeffParça Adresi;Klasör;Parça Adı;Malzeme;Kalınlık;Min. Adet;Maks. Adet;İş Sırası;İş 2;İş 3;Sonraki;Kutu;Öncelik;Yönler;Açı;Müşteri;Proje;CizimNo")
+        
+        for dosya_yolu in sorted(dosyalar):
+            dosya_adi   = os.path.basename(dosya_yolu)
+            dosya_klasor = os.path.dirname(dosya_yolu)
+            malzeme, kalinlik, adet = _dosya_adini_parse(dosya_adi)
+            
+            satirlar.append(
+                "{};{};{};{};{};{};{};1;;;;;0;15;0;{};{};".format(
+                    dosya_yolu,
+                    dosya_klasor,
+                    dosya_adi,
+                    malzeme,
+                    int(kalinlik) if kalinlik == int(kalinlik) else kalinlik,
+                    adet,
+                    adet,
+                    musteri,
+                    sip_no
+                )
+            )
+        
+        with open(csv_yolu, "w", encoding="utf-8-sig", newline="\r\n") as f:
+            f.write("\r\n".join(satirlar))
+        
+        return csv_yolu, None
+    
+    except Exception as e:
+        return None, "CSV oluşturma hatası: {}".format(e)
+
+
+def metalix_csv_guncelle(klasor, sip_no, musteri):
+    """
+    Klasörü tekrar tarayıp CSV'yi günceller.
+    Yeni eklenen DXF/DWG dosyaları dahil edilir.
+    """
+    return metalix_csv_olustur(klasor, sip_no, musteri)
+
+
 def bilgi_karti_olustur(klasor, sip_no, musteri, yetkili, telefon,
                          tarih, termin, notlar, kalemler, toplam):
     yol = os.path.join(klasor, f"{sip_no}_BILGI.txt")
