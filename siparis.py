@@ -3,6 +3,14 @@ Arsac Metal ERP — Siparis Modulu v2
 Akis: Yeni siparis kaydet → klasor olustur → Metalix ac → DXF izle → parcalar otomatik islenir
 """
 from styles import BTN_BLUE, BTN_GRAY, BTN_GREEN, BTN_ORANGE, BTN_PRIMARY, BTN_PURPLE, DIALOG_QSS, DURUM_RENK, GROUPBOX_QSS, INPUT, INPUT_QSS, LIST_QSS, SAYFA_QSS, TABLO_QSS, make_badge, make_buton, tab_qss, tablo_sag_tik_menu_ekle
+try:
+    from database_bulut import izin_var
+except:
+    def izin_var(izinler, modul, tip="goruntule"):
+        if not izinler or modul not in izinler: return False
+        v = izinler.get(modul, (False, False))
+        g, d = (v[0], v[1]) if isinstance(v, (list, tuple)) else (False, False)
+        return bool(d) if tip == "duzenle" else bool(g)
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt, QDate, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
@@ -1199,8 +1207,9 @@ class SiparisSayfasi(QWidget):
         lbl.setStyleSheet("font-size:18px;font-weight:900;color:#2c3e50;")
         hdr.addWidget(lbl); hdr.addStretch()
         # Rol veya izin ile kontrol - duzenle izni varsa buton görünür
-        _siparis_duzenle = (self.user_role in ("yonetici", "satis") or
-                            (hasattr(self, 'izinler') and izin_var(self.izinler, "siparisler", "duzenle")))
+        _izin = self.izinler.get("siparisler", (0,0))
+        _duzenle_izni = bool(_izin[1]) if isinstance(_izin, (list,tuple)) and len(_izin)>1 else False
+        _siparis_duzenle = self.user_role in ("yonetici", "satis") or _duzenle_izni
         if _siparis_duzenle:
             btn_y = QPushButton("+ Yeni Siparis"); btn_y.setFixedHeight(38)
             btn_y.setStyleSheet(STL["btn_primary"]); btn_y.clicked.connect(self._yeni)
