@@ -36,7 +36,7 @@ def _istek(method, endpoint, veri=None):
 
     req = urlreq.Request(url, data=body, headers=hdrs, method=method)
     try:
-        with urlreq.urlopen(req, timeout=15) as r:
+        with urlreq.urlopen(req, timeout=8) as r:
             return json.loads(r.read().decode("utf-8"))
     except urlerr.HTTPError as e:
         try:
@@ -48,9 +48,42 @@ def _istek(method, endpoint, veri=None):
         raise Exception("API bağlantı hatası: {}".format(e))
 
 
-def _get(endpoint):        return _istek("GET",  endpoint)
-def _post(endpoint, veri): return _istek("POST", endpoint, veri)
+import threading
+_cache = {}
+_cache_lock = threading.Lock()
+_CACHE_SURE = 30  # saniye
+
+def _get(endpoint, oncbellekle=False):
+    if oncbellekle:
+        with _cache_lock:
+            kayit = _cache.get(endpoint)
+            if kayit:
+                veri, zaman = kayit
+                if (datetime.now() - zaman).seconds < _CACHE_SURE:
+                    return veri
+    sonuc = _istek("GET", endpoint)
+    if oncbellekle:
+        with _cache_lock:
+            _cache[endpoint] = (sonuc, datetime.now())
+    return sonuc
+
+def _post(endpoint, veri):
+    # Yazma işlemleri ilgili cache'i temizler
+    with _cache_lock:
+        kaldır = [k for k in _cache if endpoint.split('/')[1] in k]
+        for k in kaldır:
+            del _cache[k]
+    return _istek("POST", endpoint, veri)
+
 def _put(endpoint, veri):  return _istek("PUT",  endpoint, veri)
+
+def cache_temizle(modul=None):
+    with _cache_lock:
+        if modul:
+            kaldır = [k for k in _cache if modul in k]
+            for k in kaldır: del _cache[k]
+        else:
+            _cache.clear()
 
 
 # ═══════════════════════════════════════════════════════════════

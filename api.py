@@ -14,6 +14,7 @@ import hashlib
 import secrets
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool as pg_pool
 import os
 from datetime import datetime
 
@@ -40,13 +41,31 @@ DB_CONFIG = {
     "password": os.environ.get("DB_PASS", "arsac2024"),
 }
 
+_pool = None
+
+def _pool_al():
+    global _pool
+    if _pool is None:
+        _pool = pg_pool.ThreadedConnectionPool(minconn=2, maxconn=10, **DB_CONFIG)
+    return _pool
+
 def get_db():
-    conn = psycopg2.connect(**DB_CONFIG)
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        yield conn, cursor
-    finally:
-        conn.close()
+        p = _pool_al()
+        conn = p.getconn()
+        conn.autocommit = False
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            yield conn, cursor
+        finally:
+            p.putconn(conn)
+    except Exception:
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        try:
+            yield conn, cursor
+        finally:
+            conn.close()
 
 # ═══════════════════════════════════════════════════════════════
 #  TOKEN DEPOSU (bellekte — yeniden başlatınca sıfırlanır)

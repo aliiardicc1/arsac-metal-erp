@@ -531,10 +531,15 @@ class ArsacMetalApp(QWidget):
 
     def tazele(self):
         try:
+            # Sadece aktif sayfayı yenile - performans optimizasyonu
+            aktif = self.pages.currentIndex()
             self.s_dash.yenile()
-            self.s_stok.yenile()
-            self.s_uretim.yenile()
-            self.s_siparis.yenile()
+            if hasattr(self, "s_stok") and aktif == self.sayfa_index.get("stok", -1):
+                self.s_stok.yenile()
+            if hasattr(self, "s_uretim") and aktif == self.sayfa_index.get("uretim", -1):
+                self.s_uretim.yenile()
+            if hasattr(self, "s_siparis") and aktif == self.sayfa_index.get("siparis", -1):
+                self.s_siparis.yenile()
             if self.user_role == "yonetici":
                 self.s_satin.tablo_yenile()
                 self.s_cari.yenile()
@@ -642,7 +647,7 @@ if __name__ == '__main__':
         _guncelleme_timer = QTimer()
         _guncelleme_timer.setSingleShot(True)
         _guncelleme_timer.timeout.connect(lambda: guncelleme_kontrol(parent=None, sessiz=True))
-        _guncelleme_timer.start(4000)
+        _guncelleme_timer.start(1800000)
     except Exception as _ge:
         print("[Güncelleme] Modül yüklenemedi:", _ge)
 
