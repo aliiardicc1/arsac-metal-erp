@@ -276,71 +276,99 @@ class ArsacMetalApp(QWidget):
         self.ticker = TickerBand()
         self.main_layout.addWidget(self.ticker)
 
-        # --- SAYFALAR (rol bazlı dinamik index) ---
+        # --- SAYFALAR (lazy load — sadece ilk açılışta dashboard yüklenir) ---
         self.pages = QStackedWidget()
         self.sayfa_index = {}
+        self.sayfa_yuklendi = {}  # hangi sayfalar yüklendi
+        self._yer_tutucu = {}     # boş placeholder widgetlar
         _idx = [0]
 
-        def _ekle(sayfa, anahtar):
-            self.pages.addWidget(sayfa)
+        IZ = self.izinler
+
+        def _yer_tutucu_ekle(anahtar):
+            """Gerçek sayfa yerine boş bir placeholder koy."""
+            w = QWidget()
+            self.pages.addWidget(w)
             self.sayfa_index[anahtar] = _idx[0]
+            self.sayfa_yuklendi[anahtar] = False
+            self._yer_tutucu[anahtar] = w
             _idx[0] += 1
 
-        IZ = self.izinler  # kisaltma
+        def _ekle(sayfa, anahtar):
+            """Direkt yükle (dashboard için)."""
+            self.pages.addWidget(sayfa)
+            self.sayfa_index[anahtar] = _idx[0]
+            self.sayfa_yuklendi[anahtar] = True
+            _idx[0] += 1
 
-        # Dashboard — herkes gorur
+        # Dashboard — açılışta yükle
         self.s_dash = DashboardSayfasi(self.cursor, self.tazele)
         _ekle(self.s_dash, "dash")
 
-        if izin_var(IZ, "stok"):
-            self.s_stok = StokListeSayfasi(self.cursor, self.conn, self.user_role)
-            _ekle(self.s_stok, "stok")
+        # Diğer sayfalar — placeholder ile rezerve et, butona basınca yükle
+        if izin_var(IZ, "stok"):      _yer_tutucu_ekle("stok")
+        if izin_var(IZ, "talepler"):  _yer_tutucu_ekle("talep")
+        if izin_var(IZ, "siparisler"):_yer_tutucu_ekle("siparis")
+        if izin_var(IZ, "uretim"):    _yer_tutucu_ekle("uretim")
+        if izin_var(IZ, "sevkiyat"):  _yer_tutucu_ekle("sevkiyat")
+        if izin_var(IZ, "muhasebe"):  _yer_tutucu_ekle("muhasebe")
+        if izin_var(IZ, "satinalma"): _yer_tutucu_ekle("satinalma")
+        if izin_var(IZ, "cariler"):   _yer_tutucu_ekle("cari")
+        if izin_var(IZ, "analiz"):    _yer_tutucu_ekle("analiz")
+        if izin_var(IZ, "piyasa"):    _yer_tutucu_ekle("piyasa")
 
-        if izin_var(IZ, "talepler"):
-            self.s_talep = HammaddeSayfasi(self.cursor, self.conn, self.tazele, self.user_role)
-            _ekle(self.s_talep, "talep")
-
-        if izin_var(IZ, "siparisler"):
-            self.s_siparis = SiparisSayfasi(self.cursor, self.conn, self.user_role, self.kullanici_adi, self.izinler)
-            _ekle(self.s_siparis, "siparis")
-
-        if izin_var(IZ, "uretim"):
-            # Goruntule ama duzenleyemez — read-only mod
-            _rol = self.user_role if izin_var(IZ, "uretim", "duzenle") else "readonly"
-            self.s_uretim = UretimSayfasi(self.cursor, self.conn, _rol)
-            _ekle(self.s_uretim, "uretim")
-
-        if izin_var(IZ, "sevkiyat"):
-            _rol = self.user_role if izin_var(IZ, "sevkiyat", "duzenle") else "readonly"
-            self.s_sevkiyat = SevkiyatSayfasi(self.cursor, self.conn, _rol)
-            _ekle(self.s_sevkiyat, "sevkiyat")
-
-        if izin_var(IZ, "muhasebe"):
-            _rol = self.user_role if izin_var(IZ, "muhasebe", "duzenle") else "readonly"
-            self.s_muhasebe = MuhasebeSayfasi(self.cursor, self.conn, _rol)
-            _ekle(self.s_muhasebe, "muhasebe")
-
-        if izin_var(IZ, "satinalma"):
-            self.s_satin = SatinalmaSayfasi(self.cursor, self.conn, self.tazele, self.user_role)
-            _ekle(self.s_satin, "satinalma")
-
-        if izin_var(IZ, "cariler"):
-            self.s_cari = TedarikciSayfasi(self.cursor, self.conn, self.user_role)
-            _ekle(self.s_cari, "cari")
-
-        if izin_var(IZ, "analiz"):
-            self.s_analiz = AnalizSayfasi(self.cursor)
-            _ekle(self.s_analiz, "analiz")
-
-        if izin_var(IZ, "piyasa"):
-            self.s_piyasa = PiyasaSayfasi(self.cursor, self.conn)
-            _ekle(self.s_piyasa, "piyasa")
+        def _lazy_yukle(anahtar):
+            """Sayfa ilk kez açılırken gerçek widget'ı yükle."""
+            if self.sayfa_yuklendi.get(anahtar):
+                return
+            idx = self.sayfa_index[anahtar]
+            IZ = self.izinler
+            sayfa = None
+            if anahtar == "stok":
+                sayfa = StokListeSayfasi(self.cursor, self.conn, self.user_role)
+                self.s_stok = sayfa
+            elif anahtar == "talep":
+                sayfa = HammaddeSayfasi(self.cursor, self.conn, self.tazele, self.user_role)
+                self.s_talep = sayfa
+            elif anahtar == "siparis":
+                sayfa = SiparisSayfasi(self.cursor, self.conn, self.user_role, self.kullanici_adi, self.izinler)
+                self.s_siparis = sayfa
+            elif anahtar == "uretim":
+                _rol = self.user_role if izin_var(IZ, "uretim", "duzenle") else "readonly"
+                sayfa = UretimSayfasi(self.cursor, self.conn, _rol)
+                self.s_uretim = sayfa
+            elif anahtar == "sevkiyat":
+                _rol = self.user_role if izin_var(IZ, "sevkiyat", "duzenle") else "readonly"
+                sayfa = SevkiyatSayfasi(self.cursor, self.conn, _rol)
+                self.s_sevkiyat = sayfa
+            elif anahtar == "muhasebe":
+                _rol = self.user_role if izin_var(IZ, "muhasebe", "duzenle") else "readonly"
+                sayfa = MuhasebeSayfasi(self.cursor, self.conn, _rol)
+                self.s_muhasebe = sayfa
+            elif anahtar == "satinalma":
+                sayfa = SatinalmaSayfasi(self.cursor, self.conn, self.tazele, self.user_role)
+                self.s_satin = sayfa
+            elif anahtar == "cari":
+                sayfa = TedarikciSayfasi(self.cursor, self.conn, self.user_role)
+                self.s_cari = sayfa
+            elif anahtar == "analiz":
+                sayfa = AnalizSayfasi(self.cursor)
+                self.s_analiz = sayfa
+            elif anahtar == "piyasa":
+                sayfa = PiyasaSayfasi(self.cursor, self.conn)
+                self.s_piyasa = sayfa
+            if sayfa:
+                self.pages.removeWidget(self._yer_tutucu[anahtar])
+                self.pages.insertWidget(idx, sayfa)
+                self.sayfa_yuklendi[anahtar] = True
+        self._lazy_yukle = _lazy_yukle
 
         self.main_layout.addWidget(self.pages)
 
         # --- BAĞLANTILAR ---
         def _git(anahtar, extra=None):
             if anahtar in self.sayfa_index:
+                self._lazy_yukle(anahtar)  # ilk açılışta yükle
                 self.pages.setCurrentIndex(self.sayfa_index[anahtar])
                 if extra: extra()
 
@@ -667,8 +695,12 @@ if __name__ == '__main__':
     # Açılışta kritik stok kontrolü
     QTimer.singleShot(800, window.s_dash.kritik_uyari_goster)
 
-    # Açılışta günlük rapor
-    def rapor_olustur():
+    # Açılışta günlük rapor — arka planda üret, arayüzü bloklamaz
+    import threading as _threading
+    from PyQt5.QtCore import QMetaObject, Q_ARG
+    from PyQt5.QtWidgets import QMessageBox as _QMB
+
+    def _rapor_thread():
         try:
             bugun = __import__('datetime').datetime.now().strftime('%Y%m%d')
             dosya = f"Gunluk Raporlar/Rapor_{bugun}.pdf"
@@ -679,10 +711,18 @@ if __name__ == '__main__':
                 ozet += f"🚨 Kritik stok: {veri.get('kritik_stok', 0)}\n"
                 ozet += f"💳 Açık borç: {veri.get('toplam_borc', 0):,.0f} TL\n\n"
                 ozet += f"📄 {pdf_yolu}"
-                QMessageBox.information(None, "📊 Günlük Rapor", ozet)
-                os.startfile(pdf_yolu)
+                # GUI güncellemesi ana thread'de yapılmalı
+                def _goster():
+                    _QMB.information(None, "📊 Günlük Rapor", ozet)
+                    os.startfile(pdf_yolu)
+                QTimer.singleShot(0, _goster)
         except Exception as e:
             print(f"Rapor hatası: {e}")
 
-    QTimer.singleShot(1500, rapor_olustur)
+    # 5 saniye bekle sonra arka planda üret — açılış kasmasını önler
+    def _rapor_baslat():
+        t = _threading.Thread(target=_rapor_thread, daemon=True)
+        t.start()
+
+    QTimer.singleShot(5000, _rapor_baslat)
     sys.exit(app.exec_())
