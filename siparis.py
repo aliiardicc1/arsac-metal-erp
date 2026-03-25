@@ -221,11 +221,8 @@ class YeniSiparisDialog(QDialog):
                     return "ARSC{:05d}".format(n + 1)
             except:
                 pass
-        # Hiç sipariş yoksa ARSC00001'den başla
-        self.cursor.execute("SELECT COUNT(*) FROM siparisler")
-        row = self.cursor.fetchone()
-        n = row[0] if isinstance(row, (list,tuple)) else list(row.values())[0] if row else 0
-        return "ARSC{:05d}".format(int(n or 0) + 1)
+        # Hic siparis yoksa ARSC00685den basla
+        return "ARSC00685"
 
     def _kaydet(self):
         musteri = self.txt_musteri.text().strip()
@@ -328,365 +325,40 @@ class YeniSiparisDialog(QDialog):
                 "Siparis sisteme islendi, manuel klasor olusturabilirsiniz.".format(
                     sip_no, str(e)))
 
-    def _csv_olustur(self, klasor, sip_no, musteri, tarih, termin):
-        """Metalix formatında CSV oluşturur."""
+    def _dxf_olustur(self, dosya_yolu, en, boy, parca_adi, malzeme, kalinlik):
+        """Dikdortgen DXF dosyasi olusturur (Metalix icin)."""
         try:
-            import csv, os
-            # DOSYALAR alt klasörü
-            dosyalar_klasor = os.path.join(klasor, "DOSYALAR")
-            os.makedirs(dosyalar_klasor, exist_ok=True)
-
-            csv_yol = os.path.join(klasor, "{}.csv".format(sip_no))
-
-            # Sipariş kalemlerini al
-            self.cursor.execute("""
-                SELECT urun_adi, malzeme, kalinlik, en, boy, adet
-                FROM siparis_kalemleri WHERE siparis_id=?
-            """, (self.sip_id,))
-            kalemler = self.cursor.fetchall()
-
-            with open(csv_yol, "w", newline="", encoding="utf-8-sig") as f:
-                yazar = csv.writer(f, delimiter=";")
-                # Metalix başlık satırı
-                yazar.writerow([
-                    "Parça Adresi", "Klasör", "Parça Adı", "Malzeme",
-                    "Kalınlık", "Min. Adet", "Maks. Adet",
-                    "İş Sırası", "İş 2", "İş 3", "Sonraki",
-                    "Kutu", "Öncelik", "Yönler", "Açı",
-                    "Müşteri", "Proje", "CizimNo"
-                ])
-                for urun, mal, kal, en_v, boy, adet in kalemler:
-                    mal  = mal or "ST37"
-                    kal  = int(float(kal or 0))
-                    adet = int(float(adet or 1))
-                    # Parça adı: ENxBOY-MALZEME_KALINLIK_ADET.dxf
-                    if en_v and boy:
-                        parca_ad = "{:g}X{:g}-{}_{}_{}".format(
-                            float(en_v), float(boy), mal, kal, adet)
-                    else:
-                        # En/boy yoksa parça adını kullan
-                        parca_ad = str(urun or "PARCA").replace(" ", "_")
-                    dosya_adi = parca_ad + ".dxf"
-                    dosya_yolu = "{}\\{}".format(dosyalar_klasor, dosya_adi)
-
-                    yazar.writerow([
-                        dosya_yolu,          # Parça Adresi
-                        dosyalar_klasor,     # Klasör
-                        dosya_adi,           # Parça Adı
-                        mal,                 # Malzeme
-                        kal,                 # Kalınlık
-                        adet,                # Min. Adet
-                        adet,                # Maks. Adet
-                        1,                   # İş Sırası
-                        "", "", "",          # İş 2, 3, Sonraki
-                        0,                   # Kutu
-                        15,                  # Öncelik
-                        0,                   # Yönler
-                        0,                   # Açı
-                        musteri,             # Müşteri
-                        sip_no,              # Proje
-                        parca_ad,            # CizimNo
-                    ])
+            import ezdxf
+            en_f  = float(en  or 0)
+            boy_f = float(boy or 0)
+            if en_f <= 0 or boy_f <= 0:
+                return False
+            doc = ezdxf.new(dxfversion="R2010")
+            doc.header["$INSUNITS"] = 4
+            msp = doc.modelspace()
+            msp.add_lwpolyline(
+                [(0, 0), (en_f, 0), (en_f, boy_f), (0, boy_f)],
+                close=True,
+                dxfattribs={"layer": "CUT"}
+            )
+            msp.add_text(
+                parca_adi,
+                dxfattribs={"layer": "INFO", "height": 5,
+                            "insert": (en_f / 2, -10)}
+            )
+            msp.add_text(
+                "{}mm {}".format(kalinlik, malzeme),
+                dxfattribs={"layer": "INFO", "height": 4,
+                            "insert": (en_f / 2, -18)}
+            )
+            doc.saveas(dosya_yolu)
+            return True
         except Exception as e:
-            print("CSV olusturulamadi:", e)
-
-
-# ─── Sipariş Detay Dialog ─────────────────────────────────────
-class SiparisDetayDialog(QDialog):
-    def __init__(self, cursor, conn, sip_id, user_role, parent=None):
-        super().__init__(parent)
-        self.cursor = cursor; self.conn = conn
-        self.sip_id = sip_id; self.user_role = user_role
-        self._izleyici = None
-        self._sip_no = ""; self._musteri = ""
-        self.setWindowTitle("Siparis Detay")
-        self.setMinimumSize(860, 600)
-        self.setStyleSheet(DIALOG_QSS + TABLO_QSS)
-        self._build()
-        self.yenile()
-
-    def _build(self):
-        lay = QVBoxLayout(self); lay.setContentsMargins(16, 16, 16, 16); lay.setSpacing(10)
-
-        # Bilgi kutusu
-        info = QGroupBox("Siparis Bilgileri")
-        ig = QGridLayout(info); ig.setSpacing(8)
-        self.lbl_no  = QLabel(); self.lbl_mus = QLabel()
-        self.lbl_tar = QLabel(); self.lbl_ter = QLabel()
-        self.lbl_top = QLabel(); self.lbl_olu = QLabel()
-        self.cmb_durum = QComboBox()
-        self.cmb_durum.addItems(list(DURUM_RENK.keys()))
-        self.cmb_durum.setFixedHeight(34); self.cmb_durum.setStyleSheet(INPUT)
-
-        for row, (l1, w1, l2, w2) in enumerate([
-            ("Siparis No:", self.lbl_no,  "Musteri:",   self.lbl_mus),
-            ("Tarih:",      self.lbl_tar, "Termin:",    self.lbl_ter),
-            ("Olusturan:",  self.lbl_olu, "Toplam:",    self.lbl_top),
-        ]):
-            ig.addWidget(QLabel(l1), row, 0); ig.addWidget(w1, row, 1)
-            ig.addWidget(QLabel(l2), row, 2); ig.addWidget(w2, row, 3)
-
-        if True:  # Tum roller gorebilir
-            ig.addWidget(QLabel("Durum:"), 3, 0); ig.addWidget(self.cmb_durum, 3, 1)
-            btn_g = QPushButton("Guncelle"); btn_g.setFixedHeight(34)
-            btn_g.setStyleSheet(STL["btn_blue"])
-            btn_g.clicked.connect(self._durum_guncelle); ig.addWidget(btn_g, 3, 2)
-        lay.addWidget(info)
-
-        # Izleme durum bandı
-        self.lbl_izleme = QLabel("DXF izleme: Pasif")
-        self.lbl_izleme.setStyleSheet(
-            "background:#f0f0f0;border-radius:6px;padding:6px 12px;"
-            "color:#7f8c8d;font-size:12px;")
-        lay.addWidget(self.lbl_izleme)
-
-        # Sekmeler
-        self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane{border:1px solid #dcdde1;border-radius:8px;background:white;
-            color: #2c3e50;}
-            QTabBar::tab{background:#ecf0f1;color:#2c3e50;padding:8px 20px;
-                         border-radius:6px 6px 0 0;font-weight:bold;}
-            QTabBar::tab:selected{background:#c0392b;color:white;}
-        """)
-        self.tabs.currentChanged.connect(self._sekme_degisti)
-
-        # Sekme 1: Parcalar
-        t1 = QWidget(); t1l = QVBoxLayout(t1); t1l.setContentsMargins(8, 8, 8, 8)
-        # Araçlar
-        th = QHBoxLayout()
-        self.lbl_parca_ozet = QLabel()
-        self.lbl_parca_ozet.setStyleSheet("color:#7f8c8d;font-size:12px;")
-        th.addWidget(self.lbl_parca_ozet); th.addStretch()
-
-        if self.user_role in ("yonetici", "satis", "uretim"):
-            btn_parca_ekle = QPushButton("+ Manuel Parca Ekle")
-            btn_parca_ekle.setFixedHeight(32); btn_parca_ekle.setStyleSheet(STL["btn_green"])
-            btn_parca_ekle.clicked.connect(self._manuel_parca_ekle); th.addWidget(btn_parca_ekle)
-
-            btn_izle = QPushButton("DXF Izlemeyi Baslat")
-            btn_izle.setFixedHeight(32); btn_izle.setStyleSheet(STL["btn_purple"])
-            btn_izle.clicked.connect(self._izlemeyi_baslat); th.addWidget(btn_izle)
-
-            btn_csv = QPushButton("CSV Olustur")
-            btn_csv.setFixedHeight(32)
-            btn_csv.setStyleSheet("background:#e67e22;color:white;border-radius:6px;"
-                                   "padding:4px 12px;font-weight:bold;border:none;")
-            btn_csv.clicked.connect(self._csv_manuel_olustur); th.addWidget(btn_csv)
-
-            btn_klasor = QPushButton("Klasoru Ac")
-            btn_klasor.setFixedHeight(32); btn_klasor.setStyleSheet(STL["btn_blue"])
-            btn_klasor.clicked.connect(self._klasoru_ac); th.addWidget(btn_klasor)
-
-            btn_mcsv = QPushButton("Metalix CSV")
-            btn_mcsv.setFixedHeight(32)
-            btn_mcsv.setStyleSheet("background:#8e44ad;color:white;border-radius:6px;font-weight:bold;border:none;padding:4px 10px;")
-            btn_mcsv.clicked.connect(self._csv_olustur_metalix); th.addWidget(btn_mcsv)
-
-        t1l.addLayout(th)
-        self.tbl_parca = self._tablo(
-            ["Parca Adi", "Kalinlik", "En", "Boy", "Adet", "Kg", "Durum", "Islem"])
-        self.tbl_parca.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for c in range(1, 7):
-            self.tbl_parca.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        self.tbl_parca.horizontalHeader().setSectionResizeMode(7, QHeaderView.Fixed)
-        self.tbl_parca.setColumnWidth(7, 140)
-        t1l.addWidget(self.tbl_parca)
-        self.tabs.addTab(t1, "Parcalar / DXF")
-
-        # Sekme 2: Üretim takibi
-        t2 = QWidget(); t2l = QVBoxLayout(t2); t2l.setContentsMargins(8, 8, 8, 8)
-        self.lbl_ur_ozet = QLabel()
-        self.lbl_ur_ozet.setStyleSheet("color:#7f8c8d;font-size:12px;padding:4px;")
-        t2l.addWidget(self.lbl_ur_ozet)
-        self.tbl_uretim = self._tablo(
-            ["Parca Adi", "Adet", "Tamamlanan", "Kalan", "Durum", "Islem"])
-        self.tbl_uretim.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        for c in range(1, 6):
-            self.tbl_uretim.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
-        t2l.addWidget(self.tbl_uretim)
-        self.tabs.addTab(t2, "Uretim Takibi")
-
-        # Sekme 3: Sevkiyat
-        t3 = QWidget(); t3l = QVBoxLayout(t3); t3l.setContentsMargins(8, 8, 8, 8)
-        h3 = QHBoxLayout()
-        self.lbl_sv_ozet = QLabel()
-        self.lbl_sv_ozet.setStyleSheet("color:#7f8c8d;font-size:12px;")
-        h3.addWidget(self.lbl_sv_ozet); h3.addStretch()
-        if self.user_role in ("yonetici", "satis", "sevkiyat"):
-            btn_ks = QPushButton("Kismi Sevkiyat"); btn_ks.setStyleSheet(STL["btn_blue"])
-            btn_ks.setFixedHeight(32); btn_ks.clicked.connect(self._kismi_sevkiyat)
-            h3.addWidget(btn_ks)
-        t3l.addLayout(h3)
-        self.tbl_sevk = self._tablo(
-            ["Parca Adi", "Toplam", "Sevk Edilen", "Kalan", "Son Sevk"])
-        self.tbl_sevk.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        t3l.addWidget(self.tbl_sevk)
-        self.tabs.addTab(t3, "Sevkiyat Takibi")
-
-        lay.addWidget(self.tabs)
-
-        # Alt butonlar
-        bh = QHBoxLayout(); bh.addStretch()
-        bk = QPushButton("Kapat"); bk.setFixedHeight(36); bk.setStyleSheet(STL["btn_gray"])
-        bk.clicked.connect(self.accept); bh.addWidget(bk)
-        lay.addLayout(bh)
-
-    def _tablo(self, headers):
-        t = QTableWidget(0, len(headers))
-        t.setHorizontalHeaderLabels(headers)
-        t.setEditTriggers(QTableWidget.NoEditTriggers)
-        t.setAlternatingRowColors(True); t.setShowGrid(False)
-        t.verticalHeader().setVisible(False)
-        t.verticalHeader().setDefaultSectionSize(40)
-        t.setSelectionBehavior(QTableWidget.SelectRows)
-        t.setWordWrap(False)
-        return t
-
-    def _item(self, text, align=Qt.AlignCenter, fg=None, bg=None):
-        it = QTableWidgetItem(str(text))
-        it.setTextAlignment(align)
-        it.setForeground(QColor(fg or "#2c3e50"))
-        if bg: it.setBackground(QColor(bg))
-        return it
-
-    def yenile(self):
-        try:
-            self.cursor.execute(
-                "SELECT sip_no,musteri,tarih,termin,durum,genel_toplam,olusturan "
-                "FROM siparisler WHERE id=?", (self.sip_id,))
-            row = self.cursor.fetchone()
-            if not row: return
-            sip_no, musteri, tarih, termin, durum, toplam, olustu = row
-            self._sip_no = sip_no; self._musteri = musteri
-            self.lbl_no.setText("<b>{}</b>".format(sip_no))
-            self.lbl_mus.setText("<b>{}</b>".format(musteri or "-"))
-            self.lbl_tar.setText(tarih or "-")
-            self.lbl_ter.setText(termin or "-")
-            self.lbl_olu.setText(olustu or "-")
-            self.lbl_top.setText(
-                "<b style='color:#c0392b'>{:,.2f} TL</b>".format(float(toplam or 0)))
-            self.cmb_durum.setCurrentText(durum or "Alindi")
-
-            self.cursor.execute(
-                "SELECT id,urun_adi,kalinlik,en,boy,adet,kg,uretim_durumu "
-                "FROM siparis_kalemleri WHERE siparis_id=?", (self.sip_id,))
-            self._kalemler = self.cursor.fetchall()
-            self._parca_tablosu_doldur()
-
-            idx = self.tabs.currentIndex()
-            if idx == 1: self._uretim_yukle()
-            elif idx == 2: self._sevkiyat_yukle()
-        except Exception as e:
-            import traceback; traceback.print_exc()
-
-    def _parca_tablosu_doldur(self):
-        self.tbl_parca.setRowCount(0)
-        # Inline düzenleme açık
-        self.tbl_parca.setEditTriggers(
-            QTableWidget.DoubleClicked | QTableWidget.SelectedClicked)
-        DUR_RENK_L = {
-            "Beklemede": "#f39c12", "Uretimde": "#2980b9",
-            "Tamamlandi": "#27ae60", "Iptal": "#e74c3c"
-        }
-        for i, (kid, urun, kal, en, boy, adet, kg, ud) in enumerate(self._kalemler):
-            self.tbl_parca.insertRow(i); self.tbl_parca.setRowHeight(i, 38)
-            kal_str = "{:.0f}".format(float(kal)) if kal else ""
-            en_str  = str(int(float(en))) if en else ""
-            boy_str = str(int(float(boy))) if boy else ""
-            kg_str  = "{:.3f}".format(float(kg)) if kg else "-"
-            ud      = ud or "Beklemede"
-            renk    = DUR_RENK_L.get(ud, "#7f8c8d")
-
-            # Düzenlenebilir hücreler
-            def _edit_item(val, align=Qt.AlignCenter):
-                it = QTableWidgetItem(str(val))
-                it.setTextAlignment(align)
-                it.setData(Qt.UserRole, kid)
-                return it
-
-            self.tbl_parca.setItem(i, 0, _edit_item(urun or "", Qt.AlignLeft | Qt.AlignVCenter))
-            self.tbl_parca.setItem(i, 1, _edit_item(kal_str))
-            self.tbl_parca.setItem(i, 2, _edit_item(en_str))
-            self.tbl_parca.setItem(i, 3, _edit_item(boy_str))
-            self.tbl_parca.setItem(i, 4, _edit_item(str(int(float(adet or 1)))))
-
-            # Kg — salt okunur (otomatik hesap)
-            kg_it = QTableWidgetItem(kg_str)
-            kg_it.setTextAlignment(Qt.AlignCenter)
-            kg_it.setFlags(kg_it.flags() & ~Qt.ItemIsEditable)
-            kg_it.setForeground(__import__("PyQt5.QtGui", fromlist=["QColor"]).QColor("#7f8c8d"))
-            self.tbl_parca.setItem(i, 5, kg_it)
-
-            self.tbl_parca.setItem(i, 6, self._item(ud, fg=renk))
-
-            # Sadece Sil butonu
-            bw = QWidget(); bl = QHBoxLayout(bw)
-            bl.setContentsMargins(2, 2, 2, 2)
-            btn_sil = QPushButton("Sil"); btn_sil.setFixedHeight(28)
-            btn_sil.setMinimumWidth(40)
-            btn_sil.setStyleSheet("background:#e74c3c;color:white;border-radius:4px;"
-                                   "font-size:11px;border:none;padding:2px 8px;")
-            btn_sil.clicked.connect(lambda _, k=kid: self._parca_sil(k))
-            bl.addWidget(btn_sil)
-            self.tbl_parca.setCellWidget(i, 7, bw)
-
-        # Hücre değişince otomatik kaydet
-        try: self.tbl_parca.itemChanged.disconnect()
-        except: pass
-        self.tbl_parca.itemChanged.connect(self._parca_inline_kaydet)
-
-        toplam_kg = sum(float(k[6] or 0) for k in self._kalemler)
-        self.lbl_parca_ozet.setText(
-            "{} parca  |  Toplam ~{:.2f} kg".format(
-                len(self._kalemler), toplam_kg))
-
-    def _parca_inline_kaydet(self, item):
-        """Tabloda hücre değişince DB'ye kaydet, kg otomatik hesapla."""
-        try:
-            kid = item.data(Qt.UserRole)
-            if not kid: return
-            row = item.row()
-
-            def _cell(col):
-                it = self.tbl_parca.item(row, col)
-                return it.text().strip() if it else ""
-
-            ad   = _cell(0)
-            kal  = float(_cell(1).replace(",", ".") or 0)
-            en_v = float(_cell(2).replace(",", ".") or 0)
-            boy  = float(_cell(3).replace(",", ".") or 0)
-            adet = int(float(_cell(4) or 1))
-            kg   = round(en_v * boy * kal * 7.85 / 1_000_000 * adet, 3) \
-                   if en_v and boy and kal else 0.0
-
-            self.cursor.execute("""
-                UPDATE siparis_kalemleri
-                SET urun_adi=?, kalinlik=?, en=?, boy=?, adet=?, kg=?
-                WHERE id=?
-            """, (ad, kal, en_v, boy, adet, kg, kid))
-            self.conn.commit()
-
-            # Kg hücresini güncelle (sinyali geçici kes)
-            self.tbl_parca.itemChanged.disconnect()
-            kg_it = self.tbl_parca.item(row, 5)
-            if kg_it and kg > 0:
-                kg_it.setText("{:.3f}".format(kg))
-            self.tbl_parca.itemChanged.connect(self._parca_inline_kaydet)
-
-            # Özet güncelle
-            self.cursor.execute(
-                "SELECT COALESCE(SUM(kg),0) FROM siparis_kalemleri WHERE siparis_id=?",
-                (self.sip_id,))
-            tkq = self.cursor.fetchone()[0]
-            self.lbl_parca_ozet.setText(
-                "{} parca  |  Toplam ~{:.2f} kg".format(
-                    self.tbl_parca.rowCount(), float(tkq)))
-        except Exception as e:
-            print("Inline kaydet hatasi:", e)
+            print("DXF olusturulamadi:", e)
+            return False
 
     def _csv_olustur(self, klasor, sip_no, musteri, tarih, termin):
-        """Metalix formatında CSV oluşturur."""
+        """Metalix formatinda CSV ve DXF dosyalari olusturur."""
         try:
             import csv
             dosyalar_klasor = os.path.join(klasor, "DOSYALAR")
@@ -697,14 +369,15 @@ class SiparisDetayDialog(QDialog):
                 FROM siparis_kalemleri WHERE siparis_id=?
             """, (self.sip_id,))
             kalemler = self.cursor.fetchall()
+            dxf_olusturulan = 0
             with open(csv_yol, "w", newline="", encoding="utf-8-sig") as f:
                 yazar = csv.writer(f, delimiter=";")
                 yazar.writerow([
-                    "Parça Adresi", "Klasör", "Parça Adı", "Malzeme",
-                    "Kalınlık", "Min. Adet", "Maks. Adet",
-                    "İş Sırası", "İş 2", "İş 3", "Sonraki",
-                    "Kutu", "Öncelik", "Yönler", "Açı",
-                    "Müşteri", "Proje", "CizimNo"
+                    "Parca Adresi", "Klasor", "Parca Adi", "Malzeme",
+                    "Kalinlik", "Min. Adet", "Maks. Adet",
+                    "Is Sirasi", "Is 2", "Is 3", "Sonraki",
+                    "Kutu", "Oncelik", "Yonler", "Aci",
+                    "Musteri", "Proje", "CizimNo"
                 ])
                 for urun, mal, kal, en_v, boy, adet in kalemler:
                     mal  = mal or "ST37"
@@ -716,16 +389,24 @@ class SiparisDetayDialog(QDialog):
                     else:
                         parca_ad = str(urun or "PARCA").replace(" ", "_")
                     dosya_adi = parca_ad + ".dxf"
-                    dosya_yolu = "{}\\{}".format(dosyalar_klasor, dosya_adi)
+                    dosya_yolu = os.path.join(dosyalar_klasor, dosya_adi)
+
+                    # DXF dosyasini otomatik olustur
+                    if en_v and boy and not os.path.exists(dosya_yolu):
+                        ok = self._dxf_olustur(dosya_yolu, en_v, boy,
+                                               parca_ad, mal, kal)
+                        if ok:
+                            dxf_olusturulan += 1
+
                     yazar.writerow([
                         dosya_yolu, dosyalar_klasor, dosya_adi,
                         mal, kal, adet, adet,
                         1, "", "", "", 0, 15, 0, 0,
                         musteri, sip_no, parca_ad,
                     ])
+            print("[CSV] {} parca, {} DXF olusturuldu".format(len(kalemler), dxf_olusturulan))
         except Exception as e:
             print("CSV olusturulamadi:", e)
-
     def _csv_manuel_olustur(self):
         """Parçalar sekmesindeki butona basınca CSV oluştur."""
         try:
@@ -851,10 +532,7 @@ class SiparisDetayDialog(QDialog):
                 self._kalemler = self.cursor.fetchall()
                 self._parca_tablosu_doldur()
             except Exception as yenile_hata:
-                QMessageBox.warning(self, "Uyari",
-                    "Parca eklendi fakat liste yenilenemedi:
-{}
-Pencereyi kapatip tekrar acin.".format(yenile_hata))
+                QMessageBox.warning(self, "Uyari", str(yenile_hata))
 
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
