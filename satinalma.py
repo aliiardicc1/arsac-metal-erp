@@ -551,13 +551,14 @@ class TekliflerListesi(QWidget):
         lay.setContentsMargins(0,10,0,0)
         lay.setSpacing(10)
 
+        # Başlık + butonlar
         hdr = QHBoxLayout()
         lbl = QLabel("📋 KAYITLI TEKLIFLER")
         lbl.setStyleSheet("font-size:14px;font-weight:bold;color:#2c3e50;")
         hdr.addWidget(lbl)
         hdr.addStretch()
 
-        btn_siparis = QPushButton("✅ Seçili Teklifi Siparişe Dönüştür")
+        btn_siparis = QPushButton("✅ Siparişe Dönüştür")
         btn_siparis.setStyleSheet("background:#27ae60;color:white;padding:10px 18px;font-weight:bold;border-radius:6px;font-size:13px;")
         btn_siparis.clicked.connect(self.sipariste_don)
 
@@ -569,15 +570,144 @@ class TekliflerListesi(QWidget):
         hdr.addWidget(btn_sil)
         lay.addLayout(hdr)
 
+        # Filtreleme satırı
+        filtre_lay = QHBoxLayout()
+        self.txt_filtre = QLineEdit()
+        self.txt_filtre.setPlaceholderText("🔍 Firma veya teklif no ile ara...")
+        self.txt_filtre.setFixedHeight(34)
+        self.txt_filtre.setStyleSheet("border:1.5px solid #dcdde1;border-radius:17px;padding:5px 14px;font-size:13px;background:white;")
+        self.txt_filtre.textChanged.connect(self._filtrele)
+        filtre_lay.addWidget(self.txt_filtre)
+
+        self.cmb_durum = QComboBox()
+        self.cmb_durum.addItems(["Tümü", "Bekliyor", "Siparis"])
+        self.cmb_durum.setFixedHeight(34)
+        self.cmb_durum.setStyleSheet("border:1.5px solid #dcdde1;border-radius:6px;padding:4px 10px;font-size:13px;background:white;")
+        self.cmb_durum.currentTextChanged.connect(self._filtrele)
+        filtre_lay.addWidget(self.cmb_durum)
+
+        self.lbl_say = QLabel("0 teklif")
+        self.lbl_say.setStyleSheet("font-size:12px;color:#7f8c8d;")
+        filtre_lay.addWidget(self.lbl_say)
+        lay.addLayout(filtre_lay)
+
+        # Bilgi etiketi
+        bilgi = QLabel("💡 Detay görmek için satıra çift tıklayın")
+        bilgi.setStyleSheet("font-size:11px;color:#7f8c8d;font-weight:normal;")
+        lay.addWidget(bilgi)
+
         self.tablo = QTableWidget(0, 7)
-        self.tablo.setHorizontalHeaderLabels(["ID","Teklif No","Firma","Tutar","Vade","Durum","Tarih"])
+        self.tablo.setHorizontalHeaderLabels(["ID","Teklif No","Firma","Tutar","Vade (Gün)","Durum","Tarih"])
         self.tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.tablo.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.tablo.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tablo.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.tablo.setAlternatingRowColors(True)
         self.tablo.verticalHeader().setVisible(False)
+        self.tablo.verticalHeader().setDefaultSectionSize(40)
+        self.tablo.doubleClicked.connect(self._detay_goster)
         lay.addWidget(self.tablo)
+
+    def _filtrele(self):
+        metin  = self.txt_filtre.text().strip().lower()
+        durum_f = self.cmb_durum.currentText()
+        gorunen = 0
+        for i in range(self.tablo.rowCount()):
+            teklif_no = (self.tablo.item(i,1).text() if self.tablo.item(i,1) else "").lower()
+            firma     = (self.tablo.item(i,2).text() if self.tablo.item(i,2) else "").lower()
+            durum     = (self.tablo.item(i,5).text() if self.tablo.item(i,5) else "")
+            metin_ok  = not metin or metin in teklif_no or metin in firma
+            durum_ok  = durum_f == "Tümü" or durum == durum_f
+            gizle = not (metin_ok and durum_ok)
+            self.tablo.setRowHidden(i, gizle)
+            if not gizle: gorunen += 1
+        self.lbl_say.setText(f"{gorunen} teklif")
+
+    def _detay_goster(self):
+        row = self.tablo.currentRow()
+        if row < 0: return
+        teklif_id  = self.tablo.item(row,0).text()
+        teklif_no  = self.tablo.item(row,1).text()
+        firma      = self.tablo.item(row,2).text()
+        tutar      = self.tablo.item(row,3).text()
+        durum      = self.tablo.item(row,5).text()
+
+        try:
+            self.cursor.execute("""
+                SELECT kalite, en, boy, kalinlik, kg, birim_fiyat, tutar
+                FROM teklif_kalemleri WHERE teklif_id=?
+                ORDER BY id
+            """, (teklif_id,))
+            kalemler = self.cursor.fetchall()
+        except:
+            kalemler = []
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"📋 Teklif Detayı — {teklif_no}")
+        dlg.setMinimumWidth(750)
+        dlg.setMinimumHeight(400)
+        dlg.setStyleSheet("""
+            QDialog { background: #f4f6f9; }
+            QLabel  { font-size: 13px; color: #2c3e50; }
+            QTableWidget { background: white; border-radius: 8px; border: 1px solid #dcdde1; font-size: 13px; }
+            QHeaderView::section { background: #2c3e50; color: white; padding: 8px; font-weight: bold; border: none; }
+        """)
+        lay = QVBoxLayout(dlg)
+        lay.setContentsMargins(15,15,15,15)
+        lay.setSpacing(10)
+
+        # Özet bilgi kartı
+        ozet_frame = QFrame()
+        ozet_frame.setStyleSheet("background:white;border-radius:8px;border:1px solid #dcdde1;padding:8px;")
+        ozet_grid = QGridLayout(ozet_frame)
+        ozet_grid.setSpacing(8)
+        for col, (baslik, deger) in enumerate([
+            ("Teklif No", teklif_no), ("Firma", firma),
+            ("Toplam", tutar), ("Durum", durum)
+        ]):
+            b = QLabel(baslik)
+            b.setStyleSheet("font-size:11px;color:#7f8c8d;font-weight:normal;")
+            d = QLabel(deger)
+            d.setStyleSheet(f"font-size:14px;font-weight:bold;color:{'#27ae60' if durum=='Siparis' else '#e67e22'};")
+            ozet_grid.addWidget(b, 0, col)
+            ozet_grid.addWidget(d, 1, col)
+        lay.addWidget(ozet_frame)
+
+        # Kalemler tablosu
+        tbl = QTableWidget(len(kalemler), 7)
+        tbl.setHorizontalHeaderLabels(["Kalite","En","Boy","Kalınlık","KG","Birim Fiyat","Tutar"])
+        tbl.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setAlternatingRowColors(True)
+
+        toplam_kg = 0.0
+        for i, k in enumerate(kalemler):
+            kalite, en, boy, kal, kg, bf, tutar_k = k
+            toplam_kg += float(kg or 0)
+            for j, val in enumerate([
+                kalite,
+                f"{en} mm", f"{boy} mm", f"{kal} mm",
+                f"{float(kg or 0):,.2f} KG",
+                f"{float(bf or 0):,.2f} TL",
+                f"{float(tutar_k or 0):,.2f} TL"
+            ]):
+                item = QTableWidgetItem(str(val))
+                item.setTextAlignment(Qt.AlignCenter)
+                tbl.setItem(i, j, item)
+        lay.addWidget(tbl)
+
+        # Alt özet
+        alt = QLabel(f"Toplam: {toplam_kg:,.2f} KG  |  {len(kalemler)} kalem")
+        alt.setStyleSheet("font-size:12px;color:#7f8c8d;font-weight:normal;")
+        lay.addWidget(alt)
+
+        btn_kapat = QPushButton("Kapat")
+        btn_kapat.setStyleSheet("background:#dcdde1;color:#2c3e50;border-radius:6px;padding:10px 24px;font-weight:bold;")
+        btn_kapat.clicked.connect(dlg.accept)
+        h = QHBoxLayout(); h.addStretch(); h.addWidget(btn_kapat)
+        lay.addLayout(h)
+        dlg.exec_()
 
     def yenile(self):
         try:
@@ -586,7 +716,8 @@ class TekliflerListesi(QWidget):
                 FROM teklifler ORDER BY id DESC
             """)
             self.tablo.setRowCount(0)
-            for i, row in enumerate(self.cursor.fetchall()):
+            rows = self.cursor.fetchall()
+            for i, row in enumerate(rows):
                 self.tablo.insertRow(i)
                 durum = str(row[5] or "Bekliyor")
                 for j, val in enumerate(row):
@@ -598,6 +729,8 @@ class TekliflerListesi(QWidget):
                     elif durum == "Bekliyor":
                         item.setBackground(QColor("#fef9e7"))
                     self.tablo.setItem(i, j, item)
+            self.lbl_say.setText(f"{len(rows)} teklif")
+            self._filtrele()
         except Exception as e:
             print(f"Teklif listesi hatasi: {e}")
 
