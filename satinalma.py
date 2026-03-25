@@ -83,21 +83,26 @@ def _pdf_olustur(baslik_txt, siparis_no, firma, kalemler, nakliye, toplam_tutar,
 
     # Kalem tablosu
     story.append(Paragraph("<b>KALEMLER</b>", ParagraphStyle("sh", fontSize=11, fontName="Helvetica-Bold", textColor=KOYU, spaceAfter=5)))
-    tv = [["#","Malzeme","En","Boy","Kal.","KG","Birim Fiyat","Tutar"]]
+    tv = [["#","Stok Kodu","Malzeme","En","Boy","Kal.","KG","Birim Fiyat","Tutar"]]
     toplam_kg = 0.0; malzeme_top = 0.0
     for idx, k in enumerate(kalemler, 1):
-        kalite, en, boy, kal, kg, bf = k[:6]
+        # Stok kodu varsa 7 eleman, yoksa 6 eleman
+        if len(k) >= 7:
+            kalite, en, boy, kal, kg, bf, stok_kodu = k[0], k[1], k[2], k[3], k[4], k[5], k[6]
+        else:
+            kalite, en, boy, kal, kg, bf = k[:6]
+            stok_kodu = "-"
         kg_f = float(kg or 0); bf_f = float(bf or 0); tutar = kg_f * bf_f
         toplam_kg += kg_f; malzeme_top += tutar
-        tv.append([str(idx), kalite, str(en), str(boy), str(kal),
+        tv.append([str(idx), str(stok_kodu), kalite, str(en), str(boy), str(kal),
                    f"{kg_f:,.2f}", f"{bf_f:,.2f} TL", f"{tutar:,.2f} TL"])
-    kt = Table(tv, colWidths=[0.6*cm,3.8*cm,1.8*cm,1.8*cm,1.4*cm,2*cm,2.6*cm,3*cm])
+    kt = Table(tv, colWidths=[0.5*cm, 2.8*cm, 3*cm, 1.5*cm, 1.5*cm, 1.2*cm, 1.8*cm, 2.4*cm, 3.3*cm])
     kt.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),KOYU),('TEXTCOLOR',(0,0),(-1,0),BEYAZ),
         ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,0),8),
         ('FONTNAME',(0,1),(-1,-1),'Helvetica'),('FONTSIZE',(0,1),(-1,-1),8),
         ('ROWBACKGROUNDS',(0,1),(-1,-1),[BEYAZ,ACIK_GRI]),
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),('ALIGN',(7,1),(7,-1),'RIGHT'),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),('ALIGN',(8,1),(8,-1),'RIGHT'),
         ('GRID',(0,0),(-1,-1),0.5,colors.HexColor("#dcdde1")),
         ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
     ]))
@@ -425,7 +430,11 @@ class TeklifPopUp(QDialog):
             tarih = datetime.now().strftime('%d.%m.%Y')
             vade      = self.txt_vade.text().strip() or "30"
             odeme     = self.cmb_odeme.currentText()
-            teklif_no = datetime.now().strftime('%Y%m%d%H%M%S')
+            # Kısa numara: TKL-260325-001 formatı
+            self.cursor.execute("SELECT COUNT(*) FROM teklifler")
+            r = self.cursor.fetchone()
+            sayi = (list(r.values())[0] if hasattr(r, 'values') else r[0] or 0) + 1
+            teklif_no = f"TKL-{datetime.now().strftime('%y%m%d')}-{sayi:03d}"
             durum     = "Siparis" if sipariste_don else "Bekliyor"
 
             # Ana firma (ilk kalemden al)
@@ -507,7 +516,7 @@ class TeklifPopUp(QDialog):
             # PDF
             for firma, fk_idx in firma_gruplari.items():
                 fk = [sv for sv in satir_verileri if sv['firma'] == firma]
-                pdf_k = [(k['kalite'],k['en'],k['boy'],k['kal'],k['kg'],k['bf']) for k in fk]
+                pdf_k = [(k['kalite'],k['en'],k['boy'],k['kal'],k['kg'],k['bf'],k.get('stok_kodu','-')) for k in fk]
                 firma_kg  = sum(float(k['kg'] or 0) for k in fk)
                 firma_nak = (firma_kg/toplam_kg*nakliye) if toplam_kg > 0 else 0
                 pdf = _pdf_olustur("SIPARIŞ FORMU", siparis_no, firma, pdf_k,
@@ -639,8 +648,14 @@ class TekliflerListesi(QWidget):
                   round(genel/toplam_kg,2) if toplam_kg>0 else 0,
                   round(nakliye,2), round(genel,2), vade_tarihi, odeme, tarih))
 
-            # Stok
+            # Stok + sipariş numarası üret
+            self.cursor.execute("SELECT COUNT(*) FROM satinalma_kayitlari")
+            r0 = self.cursor.fetchone()
+            sayi = (r0[0] or 0) + 1
+            siparis_no = f"SIP-{datetime.now().strftime('%y%m%d')}-{sayi:03d}"
+
             tarih_kisa = datetime.now().strftime('%y%m%d')
+            stok_satirlari = []
             for i, r in enumerate(rows):
                 kalite, en, boy, kal, kg, bf, talep_id = r[:7]
                 self.cursor.execute("SELECT COUNT(*) FROM stok WHERE stok_kodu LIKE ?", (f"AR-{tarih_kisa}-%",))
@@ -652,15 +667,23 @@ class TekliflerListesi(QWidget):
                 """, (stok_kodu, kalite, 1, en, boy, kal, kg, firma, tarih))
                 if talep_id:
                     self.cursor.execute("DELETE FROM talepler WHERE id=?", (talep_id,))
+                stok_satirlari.append((kalite, en, boy, kal, kg, bf, stok_kodu))
 
             self.cursor.execute("UPDATE teklifler SET durum='Siparis' WHERE id=?", (teklif_id,))
             self.conn.commit()
             log_yaz(self.cursor, self.conn, "SIPARIS_VERILDI",
-                    f"No:{siparis_no} | {ana_firma} | {genel:,.2f} TL | {len(kalemler)} kalem")
+                    f"No:{siparis_no} | {firma} | {genel:,.2f} TL | {len(rows)} kalem")
             if self.callback: self.callback()
             self.yenile()
+
+            # PDF — stok kodları dahil
+            pdf = _pdf_olustur("SIPARIŞ FORMU", siparis_no, firma, stok_satirlari,
+                               nakliye, genel, vade, odeme, tarih)
+            try: os.startfile(pdf)
+            except: pass
+
             QMessageBox.information(self,"✅ Başarili",
-                f"Teklif siparişe dönüştürüldü!\n{len(rows)} kalem stoka eklendi (Yolda).")
+                f"Teklif siparişe dönüştürüldü!\n{len(rows)} kalem stoka eklendi (Yolda).\nSipariş No: {siparis_no}")
         except Exception as e:
             QMessageBox.critical(self,"❌ Hata",str(e))
 
