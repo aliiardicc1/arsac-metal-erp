@@ -24,17 +24,32 @@ def sqlite_to_pg(sql):
 def sorgu_calistir(istek: SorguIstek, kullanici: str = Depends(token_dogrula), db=Depends(get_db)):
     for pattern in ENGELLI:
         if re.search(pattern, istek.sql.upper()):
-            raise HTTPException(status_code=403, detail=f"Guvenlik: Bu komut kullanilamaz")
+            raise HTTPException(status_code=403, detail="Guvenlik: Bu komut kullanilamaz")
     conn, cursor = db
     sql = sqlite_to_pg(istek.sql)
+
+    # INSERT sorgularına RETURNING id ekle — lastrowid almak için
+    sql_upper = sql.strip().upper()
+    is_insert = sql_upper.startswith("INSERT")
+    if is_insert and "RETURNING" not in sql_upper:
+        sql = sql.rstrip().rstrip(";") + " RETURNING id"
+
     try:
         cursor.execute(sql, istek.params or [])
+        lastrowid = None
+        rows = []
         try:
-            rows = [dict(r) for r in cursor.fetchall()]
+            raw = cursor.fetchall()
+            if raw:
+                rows = [dict(r) for r in raw]
+                # INSERT RETURNING id — ilk satırdan id'yi al, rows'u temizle
+                if is_insert and rows and "id" in rows[0]:
+                    lastrowid = rows[0]["id"]
+                    rows = []
         except:
-            rows = []
+            pass
         conn.commit()
-        return {"rows": rows, "rowcount": cursor.rowcount, "lastrowid": None}
+        return {"rows": rows, "rowcount": cursor.rowcount, "lastrowid": lastrowid}
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
