@@ -161,23 +161,29 @@ class TeklifPopUp(QDialog):
         lay.setContentsMargins(15,15,15,15)
         lay.setSpacing(10)
 
-        # Başlik
+        # Başlik + satır sil butonu
         hdr = QHBoxLayout()
         hdr.addWidget(QLabel("📋 Teklif Kalemleri — Fiyat ve Tedarikçi Girin:"))
         hdr.addStretch()
         uyari = QLabel("⚠️ Değiştirilen satirlar sari işaretlenir")
         uyari.setStyleSheet("color: #e67e22; font-size: 12px;")
         hdr.addWidget(uyari)
+        btn_satir_sil = QPushButton("🗑️ Seçili Satırı Sil")
+        btn_satir_sil.setFixedHeight(30)
+        btn_satir_sil.setStyleSheet("background:#e74c3c;color:white;font-weight:bold;font-size:12px;border-radius:5px;padding:4px 12px;")
+        btn_satir_sil.clicked.connect(self._satir_sil)
+        hdr.addWidget(btn_satir_sil)
         lay.addLayout(hdr)
 
-        # Tablo
-        self.tablo = QTableWidget(len(self.veri_listesi), 8)
-        self.tablo.setHorizontalHeaderLabels(["Kalite","En (mm)","Boy (mm)","Kalinlik (mm)","KG (Oto)","Tedarikçi","Birim Fiyat","ID"])
+        # Tablo — Adet kolonu eklendi (kolon 4), ID kolonu 8'e taşındı
+        self.tablo = QTableWidget(len(self.veri_listesi), 9)
+        self.tablo.setHorizontalHeaderLabels(["Kalite","En (mm)","Boy (mm)","Kalinlik (mm)","Adet","KG (Oto)","Tedarikçi","Birim Fiyat","ID"])
         self.tablo.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.tablo.setColumnHidden(7, True)
+        self.tablo.setColumnHidden(8, True)
         self.tablo.verticalHeader().setVisible(False)
         self.tablo.setAlternatingRowColors(True)
         self.tablo.verticalHeader().setDefaultSectionSize(38)
+        self.tablo.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         tedarikciler = self._tedarikcileri_getir()
         self.orijinal = []
@@ -200,6 +206,10 @@ class TeklifPopUp(QDialog):
             t_boy.textChanged.connect(lambda _,r=i: self._olcu(r))
             t_kal.textChanged.connect(lambda _,r=i: self._olcu(r))
 
+            # Adet — değiştirilebilir, KG'yi otomatik günceller
+            t_adet = _le("1", True)
+            t_adet.textChanged.connect(lambda _,r=i: self._olcu(r))
+
             kg_val = float(veri[5] or 0)
             t_kg = QLineEdit(f"{kg_val:.2f}")
             t_kg.setAlignment(Qt.AlignCenter)
@@ -217,10 +227,11 @@ class TeklifPopUp(QDialog):
             self.tablo.setCellWidget(i,1,t_en)
             self.tablo.setCellWidget(i,2,t_boy)
             self.tablo.setCellWidget(i,3,t_kal)
-            self.tablo.setCellWidget(i,4,t_kg)
-            self.tablo.setCellWidget(i,5,cmb)
-            self.tablo.setCellWidget(i,6,t_fiyat)
-            self.tablo.setItem(i,7,QTableWidgetItem(str(veri[0])))
+            self.tablo.setCellWidget(i,4,t_adet)
+            self.tablo.setCellWidget(i,5,t_kg)
+            self.tablo.setCellWidget(i,6,cmb)
+            self.tablo.setCellWidget(i,7,t_fiyat)
+            self.tablo.setItem(i,8,QTableWidgetItem(str(veri[0])))
 
         lay.addWidget(self.tablo)
 
@@ -289,14 +300,16 @@ class TeklifPopUp(QDialog):
 
     def _olcu(self, row):
         try:
-            en  = float(self.tablo.cellWidget(row,1).text().replace(',','.') or 0)
-            boy = float(self.tablo.cellWidget(row,2).text().replace(',','.') or 0)
-            kal = float(self.tablo.cellWidget(row,3).text().replace(',','.') or 0)
+            en   = float(self.tablo.cellWidget(row,1).text().replace(',','.') or 0)
+            boy  = float(self.tablo.cellWidget(row,2).text().replace(',','.') or 0)
+            kal  = float(self.tablo.cellWidget(row,3).text().replace(',','.') or 0)
+            adet = float(self.tablo.cellWidget(row,4).text().replace(',','.') or 1)
+            if adet <= 0: adet = 1
             if en>0 and boy>0 and kal>0:
-                kg = (en*boy*kal*7.85)/1_000_000
-                self.tablo.cellWidget(row,4).setText(f"{kg:.2f}")
+                kg = (en*boy*kal*7.85)/1_000_000 * adet
+                self.tablo.cellWidget(row,5).setText(f"{kg:.2f}")
             else:
-                self.tablo.cellWidget(row,4).setText("0.00")
+                self.tablo.cellWidget(row,5).setText("0.00")
         except: pass
         self._kontrol(row)
         self.hesapla()
@@ -313,17 +326,33 @@ class TeklifPopUp(QDialog):
             stil = ("background:#fff9c4;border:2px solid #f39c12;border-radius:5px;padding:6px;color:black;"
                     if degisti else
                     "background:white;border:1px solid #bdc3c7;border-radius:5px;padding:6px;color:black;")
-            for col in [0,1,2,3,5,6]:
+            for col in [0,1,2,3,4,6,7]:
                 w = self.tablo.cellWidget(row, col)
                 if w: w.setStyleSheet(stil)
         except: pass
+
+    def _satir_sil(self):
+        """Seçili satırı teklif listesinden kaldırır (talep silinmez, sadece teklif dışı kalır)."""
+        row = self.tablo.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Uyarı", "Lütfen silmek istediğiniz satırı seçin.")
+            return
+        kalite = self.tablo.cellWidget(row, 0).text() if self.tablo.cellWidget(row, 0) else "?"
+        cevap = QMessageBox.question(self, "Satırı Kaldır",
+            f"'{kalite}' kalemi teklif listesinden kaldırılsın mı?\n(Talep silinmez, sadece bu tekliften çıkarılır)",
+            QMessageBox.Yes | QMessageBox.No)
+        if cevap == QMessageBox.Yes:
+            if row < len(self.orijinal):
+                self.orijinal.pop(row)
+            self.tablo.removeRow(row)
+            self.hesapla()
 
     def hesapla(self):
         try:
             toplam_bedel = 0.0; toplam_kg = 0.0
             for i in range(self.tablo.rowCount()):
-                kg = float(self.tablo.cellWidget(i,4).text().replace(',','') or 0)
-                try: fiyat = float(self.tablo.cellWidget(i,6).text().replace(',','.') or 0)
+                kg = float(self.tablo.cellWidget(i,5).text().replace(',','') or 0)
+                try: fiyat = float(self.tablo.cellWidget(i,7).text().replace(',','.') or 0)
                 except: fiyat = 0.0
                 toplam_bedel += kg * fiyat; toplam_kg += kg
             try: nakliye = float(self.txt_nakliye.text().replace(',','.') or 0)
@@ -340,17 +369,18 @@ class TeklifPopUp(QDialog):
         """Tüm satirlardan veri toplar."""
         kalemler = []
         for i in range(self.tablo.rowCount()):
-            talep_id = self.tablo.item(i,7).text()
+            talep_id = self.tablo.item(i,8).text() if self.tablo.item(i,8) else "0"
             kalite   = self.tablo.cellWidget(i,0).text().strip()
             en       = self.tablo.cellWidget(i,1).text().strip()
             boy      = self.tablo.cellWidget(i,2).text().strip()
             kal      = self.tablo.cellWidget(i,3).text().strip()
-            kg       = self.tablo.cellWidget(i,4).text().replace(',','')
-            firma    = self.tablo.cellWidget(i,5).currentText()
-            try: bf  = float(self.tablo.cellWidget(i,6).text().replace(',','.') or 0)
+            adet     = self.tablo.cellWidget(i,4).text().strip()
+            kg       = self.tablo.cellWidget(i,5).text().replace(',','')
+            firma    = self.tablo.cellWidget(i,6).currentText()
+            try: bf  = float(self.tablo.cellWidget(i,7).text().replace(',','.') or 0)
             except: bf = 0.0
             kalemler.append({'talep_id':talep_id,'kalite':kalite,'en':en,
-                             'boy':boy,'kal':kal,'kg':kg,'firma':firma,'bf':bf})
+                             'boy':boy,'kal':kal,'adet':adet,'kg':kg,'firma':firma,'bf':bf})
         return kalemler
 
     def teklif_pdf(self):
@@ -728,7 +758,7 @@ class SatinalmaSayfasi(QWidget):
     def tablo_yenile(self):
         try:
             self.tablo.setRowCount(0)
-            self.cursor.execute("SELECT id,kalite,en,boy,kalinlik,kg,tarih FROM talepler ORDER BY id DESC")
+            self.cursor.execute("SELECT id,kalite,en,boy,kalinlik,kg,tarih FROM talepler WHERE durum=0 ORDER BY id DESC")
             rows = self.cursor.fetchall()
             for i, row in enumerate(rows):
                 self.tablo.insertRow(i)
