@@ -842,7 +842,20 @@ class SiparisDetayDialog(QDialog):
                     VALUES (?,?,?,?,?,?,?,?,'Adet',0,0,'Beklemede')
                 """, (self.sip_id, ad, kal, en_v, boy, adet, kg, mal))
             self.conn.commit()
-            self.yenile()
+
+            # Direkt parca listesini yenile
+            try:
+                self.cursor.execute(
+                    "SELECT id,urun_adi,kalinlik,en,boy,adet,kg,uretim_durumu "
+                    "FROM siparis_kalemleri WHERE siparis_id=?", (self.sip_id,))
+                self._kalemler = self.cursor.fetchall()
+                self._parca_tablosu_doldur()
+            except Exception as yenile_hata:
+                QMessageBox.warning(self, "Uyari",
+                    "Parca eklendi fakat liste yenilenemedi:
+{}
+Pencereyi kapatip tekrar acin.".format(yenile_hata))
+
         except Exception as e:
             QMessageBox.critical(self, "Hata", str(e))
 
