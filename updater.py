@@ -57,7 +57,7 @@ GITHUB_TOKEN  = ""
 EXE_ADI       = "ArsacMetalERP.exe"
 
 # Mevcut sürüm — her güncellemede artırın (main.py ile aynı tutun)
-SURUM         = "1.5.7"
+SURUM         = "1.5.9"
 
 # Güncelleme kontrolü kaç saniyede bir yapılsın (0 = sadece açılışta)
 KONTROL_SURESI = 0
