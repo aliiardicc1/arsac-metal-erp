@@ -1,9 +1,9 @@
 """
-Arsac Metal ERP — Bulut API İstemcisi
+Arsac Metal ERP — Bulut API Istemcisi
 ======================================
-database.py ile aynı arayüzü sunar.
+database.py ile ayni arayuzu sunar.
 Arkada FastAPI sunucusuna HTTP istekleri atar.
-BulutCursor tüm SQL sorgularını /sorgu endpoint'ine iletir.
+BulutCursor tum SQL sorgularini /sorgu endpoint'ine iletir.
 """
 
 import json
@@ -13,27 +13,26 @@ import urllib.error as urlerr
 from datetime import datetime
 
 # ═══════════════════════════════════════════════════════════════
-#  AYARLAR
+# AYARLAR
 # ═══════════════════════════════════════════════════════════════
-API_URL    = "http://213.159.6.166:8000"
-_token     = None
-_kullanici = None
 
+API_URL = "http://213.159.6.166:8000"
+_token  = None
+_kullanici = None
 
 def _sifre_hash(sifre):
     return hashlib.sha256(sifre.encode("utf-8")).hexdigest()
 
+# ═══════════════════════════════════════════════════════════════
+# HTTP YARDIMCILARI
+# ═══════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════
-#  HTTP YARDIMCILARI
-# ═══════════════════════════════════════════════════════════════
 def _istek(method, endpoint, veri=None):
     url  = API_URL + endpoint
     body = json.dumps(veri).encode("utf-8") if veri is not None else None
     hdrs = {"Content-Type": "application/json"}
     if _token:
         hdrs["Authorization"] = "Bearer " + _token
-
     req = urlreq.Request(url, data=body, headers=hdrs, method=method)
     try:
         with urlreq.urlopen(req, timeout=8) as r:
@@ -45,11 +44,10 @@ def _istek(method, endpoint, veri=None):
         except:
             raise Exception("HTTP {}: {}".format(e.code, e.reason))
     except Exception as e:
-        raise Exception("API bağlantı hatası: {}".format(e))
-
+        raise Exception("API baglanti hatasi: {}".format(e))
 
 import threading
-_cache = {}
+_cache      = {}
 _cache_lock = threading.Lock()
 _CACHE_SURE = 30  # saniye
 
@@ -68,14 +66,13 @@ def _get(endpoint, oncbellekle=False):
     return sonuc
 
 def _post(endpoint, veri):
-    # Yazma işlemleri ilgili cache'i temizler
     with _cache_lock:
         kaldır = [k for k in _cache if endpoint.split('/')[1] in k]
         for k in kaldır:
             del _cache[k]
     return _istek("POST", endpoint, veri)
 
-def _put(endpoint, veri):  return _istek("PUT",  endpoint, veri)
+def _put(endpoint, veri): return _istek("PUT", endpoint, veri)
 
 def cache_temizle(modul=None):
     with _cache_lock:
@@ -85,74 +82,22 @@ def cache_temizle(modul=None):
         else:
             _cache.clear()
 
-
 # ═══════════════════════════════════════════════════════════════
-#  BULUT CURSOR — tüm SQL sorgularını API'ye iletir
+# SMART ROW — kolon adi hem index hem key ile erisim
 # ═══════════════════════════════════════════════════════════════
-class BulutCursor:
-    """
-    SQLite cursor ile birebir aynı arayüz.
-    Her execute() çağrısını /sorgu endpoint'ine gönderir.
-    Modüllere hiç dokunmadan çalışır.
-    """
-    def __init__(self):
-        self._rows    = []
-        self._rowcount = 0
-        self.lastrowid = None
-
-    def execute(self, sql, params=()):
-        try:
-            sonuc = _post("/sorgu", {
-                "sql":    sql,
-                "params": list(params)
-            })
-            self._rows     = sonuc.get("rows", [])
-            self._rowcount = sonuc.get("rowcount", 0)
-            self.lastrowid = sonuc.get("lastrowid", None)
-        except Exception as e:
-            print("[BulutCursor] Sorgu hatası:", e)
-            print("  SQL:", sql[:120])
-            self._rows     = []
-            self._rowcount = 0
-
-    def executemany(self, sql, param_list):
-        for params in param_list:
-            self.execute(sql, params)
-
-    def fetchall(self):
-        rows = self._rows
-        # Modüller tuple bekliyorsa dict değerleri tuple'a çevir
-        return [_dict_to_row(r) for r in rows]
-
-    def fetchone(self):
-        if not self._rows:
-            return None
-        return _dict_to_row(self._rows[0])
-
-    def __iter__(self):
-        return iter(self.fetchall())
-
-    @property
-    def rowcount(self):
-        return self._rowcount
-
-
-def _dict_to_row(r):
-    """
-    Dict satırını DictRow gibi hem index hem key ile erişilebilir yapar.
-    Modüller row[0], row['alan'] veya row.get() kullanabilir.
-    """
-    if isinstance(r, dict):
-        return _SmartRow(r)
-    return r
-
 
 class _SmartRow:
-    """Dict'i hem tuple hem dict gibi kullanmayı sağlar."""
-    def __init__(self, d):
-        self._d    = d
-        self._vals = list(d.values())
-        self._keys = list(d.keys())
+    """
+    Kolon adlari ve degerler ayri tutulur.
+    row[0], row['alan'], row.get('alan') hepsini destekler.
+    Degerler dogru tipte (int, float, str) kalir.
+    """
+    def __init__(self, cols, vals):
+        self._cols = list(cols)
+        self._vals = list(vals)
+        self._d    = {}
+        for c, v in zip(cols, vals):
+            self._d[c] = v
 
     def __getitem__(self, key):
         if isinstance(key, int):
@@ -184,31 +129,92 @@ class _SmartRow:
         return key in self._d
 
 
+# ═══════════════════════════════════════════════════════════════
+# BULUT CURSOR — tum SQL sorgularini API'ye iletir
+# ═══════════════════════════════════════════════════════════════
+
+class BulutCursor:
+    """
+    SQLite cursor ile birebir ayni arayuz.
+    Her execute() cagrisini /sorgu endpoint'ine gonderir.
+    Modullere hic dokunmadan calisir.
+    """
+    def __init__(self):
+        self._cols     = []
+        self._data     = []
+        self._rowcount = 0
+        self.lastrowid = None
+
+    def execute(self, sql, params=()):
+        try:
+            sonuc = _post("/sorgu", {
+                "sql":    sql,
+                "params": list(params)
+            })
+            rows = sonuc.get("rows", [])
+            # Yeni format: {"cols": [...], "data": [[...], ...]}
+            if isinstance(rows, dict):
+                self._cols = rows.get("cols", [])
+                self._data = rows.get("data", [])
+            # Eski format: [{"kolon": deger, ...}, ...]  (geriye donuk uyumluluk)
+            elif isinstance(rows, list) and rows and isinstance(rows[0], dict):
+                self._cols = list(rows[0].keys())
+                self._data = [list(r.values()) for r in rows]
+            else:
+                self._cols = []
+                self._data = []
+            self._rowcount = sonuc.get("rowcount", 0)
+            self.lastrowid = sonuc.get("lastrowid", None)
+        except Exception as e:
+            print("[BulutCursor] Sorgu hatasi:", e)
+            print("  SQL:", sql[:120])
+            self._cols     = []
+            self._data     = []
+            self._rowcount = 0
+
+    def executemany(self, sql, param_list):
+        for params in param_list:
+            self.execute(sql, params)
+
+    def fetchall(self):
+        return [_SmartRow(self._cols, row) for row in self._data]
+
+    def fetchone(self):
+        if not self._data:
+            return None
+        return _SmartRow(self._cols, self._data[0])
+
+    def __iter__(self):
+        return iter(self.fetchall())
+
+    @property
+    def rowcount(self):
+        return self._rowcount
+
+
 class BulutConn:
-    """SQLite conn ile aynı arayüz."""
+    """SQLite conn ile ayni arayuz."""
     def commit(self): pass
     def close(self):  pass
     def cursor(self): return BulutCursor()
     def __enter__(self): return self
     def __exit__(self, *a): pass
 
+# ═══════════════════════════════════════════════════════════════
+# ANA FONKSIYONLAR
+# ═══════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════
-#  ANA FONKSİYONLAR
-# ═══════════════════════════════════════════════════════════════
 def baglanti_kur():
     try:
         sonuc = _get("/saglik")
         if sonuc.get("durum") == "ok":
-            print("[BulutDB] API bağlantısı OK:", API_URL)
+            print("[BulutDB] API baglantisi OK:", API_URL)
     except Exception as e:
-        print("[BulutDB] UYARI: API'ye bağlanılamadı:", e)
+        print("[BulutDB] UYARI: API'ye baglanılamadi:", e)
     return BulutConn(), BulutCursor()
-
 
 def baglanti_yenile(conn, cursor):
     return baglanti_kur()
-
 
 def giris_yap(kullanici_adi, sifre):
     global _token, _kullanici
@@ -218,33 +224,32 @@ def giris_yap(kullanici_adi, sifre):
     })
     _token     = sonuc["token"]
     _kullanici = kullanici_adi
-    print("[BulutDB] Giriş başarılı:", kullanici_adi)
+    print("[BulutDB] Giris basarili:", kullanici_adi)
     return sonuc
-
 
 def cikis_yap():
     global _token, _kullanici
     try: _post("/cikis", {})
     except: pass
-    _token = None
+    _token     = None
     _kullanici = None
 
+# ═══════════════════════════════════════════════════════════════
+# IZIN SISTEMI
+# ═══════════════════════════════════════════════════════════════
 
-# ═══════════════════════════════════════════════════════════════
-#  İZİN SİSTEMİ
-# ═══════════════════════════════════════════════════════════════
 ROL_VARSAYILAN_IZIN = {
-    "ozet":       {"yonetici":(1,1),"satis":(1,0),"uretim":(1,0),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(1,0)},
-    "stok":       {"yonetici":(1,1),"satis":(1,1),"uretim":(1,1),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(1,0)},
-    "talepler":   {"yonetici":(1,1),"satis":(1,1),"uretim":(1,1),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(1,1)},
-    "siparisler": {"yonetici":(1,1),"satis":(1,1),"uretim":(1,0),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(0,0)},
-    "uretim":     {"yonetici":(1,1),"satis":(1,0),"uretim":(1,1),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(1,0)},
-    "sevkiyat":   {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(1,1),"muhasebe":(0,0),"personel":(0,0)},
-    "muhasebe":   {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(1,1),"personel":(0,0)},
-    "satinalma":  {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(1,0),"personel":(0,0)},
-    "cariler":    {"yonetici":(1,1),"satis":(1,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(1,1),"personel":(0,0)},
-    "analiz":     {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(1,0),"personel":(0,0)},
-    "piyasa":     {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(0,0),"personel":(0,0)},
+    "ozet":      {"yonetici":(1,1),"satis":(1,0),"uretim":(1,0),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(1,0)},
+    "stok":      {"yonetici":(1,1),"satis":(1,1),"uretim":(1,1),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(1,0)},
+    "talepler":  {"yonetici":(1,1),"satis":(1,1),"uretim":(1,1),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(1,1)},
+    "siparisler":{"yonetici":(1,1),"satis":(1,1),"uretim":(1,0),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(0,0)},
+    "uretim":    {"yonetici":(1,1),"satis":(1,0),"uretim":(1,1),"sevkiyat":(1,0),"muhasebe":(1,0),"personel":(1,0)},
+    "sevkiyat":  {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(1,1),"muhasebe":(0,0),"personel":(0,0)},
+    "muhasebe":  {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(1,1),"personel":(0,0)},
+    "satinalma": {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(1,0),"personel":(0,0)},
+    "cariler":   {"yonetici":(1,1),"satis":(1,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(1,1),"personel":(0,0)},
+    "analiz":    {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(1,0),"personel":(0,0)},
+    "piyasa":    {"yonetici":(1,1),"satis":(0,0),"uretim":(0,0),"sevkiyat":(0,0),"muhasebe":(0,0),"personel":(0,0)},
 }
 
 def izin_yukle(cursor, kullanici_adi):
@@ -261,13 +266,13 @@ def izin_var(izinler, modul, tip="goruntule"):
     return bool(d) if tip == "duzenle" else bool(g)
 
 def _izin_varsayilan_yukle(cursor, conn=None):
-    pass  # API tarafında otomatik
-
+    pass  # API tarafinda otomatik
 
 # ═══════════════════════════════════════════════════════════════
-#  UYUMLULUK FONKSİYONLARI
+# UYUMLULUK FONKSIYONLARI
 # ═══════════════════════════════════════════════════════════════
-def db_yolu_al():        return API_URL
+
+def db_yolu_al(): return API_URL
 def db_yolu_kaydet(yol): return True
 def otomatik_yedekle(max_yedek=7): return True
 
@@ -297,15 +302,15 @@ def ayarlari_yaz(veri):
 def db_saglik_kontrol(cursor):
     try:
         _get("/saglik")
-        return True, "Bulut API sağlıklı: {}".format(API_URL)
+        return True, "Bulut API saglikli: {}".format(API_URL)
     except Exception as e:
-        return False, "API bağlantı hatası: {}".format(e)
+        return False, "API baglanti hatasi: {}".format(e)
 
 def db_bilgi(cursor):
     try:
         return _get("/ozet")
     except:
-        return {"hata": "API bağlantısı yok"}
+        return {"hata": "API baglantisi yok"}
 
-def yedekleri_listele():   return []
+def yedekleri_listele(): return []
 def yedekten_geri_yukle(y): return False
