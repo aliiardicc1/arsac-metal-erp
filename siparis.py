@@ -1131,7 +1131,7 @@ class SiparisSayfasi(QWidget):
         if not sid: return
         dlg = SiparisDetayDialog(self.cursor, self.conn, sid, self.user_role, self)
         dlg.exec_(); self.yenile()
-        class SiparisDetayDialog(QDialog):
+    class SiparisDetayDialog(QDialog):
     """Siparis detay gorunumu - parcalar, uretim ve sevkiyat bilgileri."""
 
     def __init__(self, cursor, conn, siparis_id, user_role="personel", parent=None):
