@@ -1,0 +1,7 @@
+content = open('kullanici.py', encoding='utf-8').read()
+content = content.replace('Åifre', 'Şifre')
+content = content.replace('Åifrenizi', 'Şifrenizi')
+content = content.replace('GİRİÅ YAP', 'GİRİŞ YAP')
+content = content.replace('GiriÅ\u0178', 'Giriş')
+open('kullanici.py', 'w', encoding='utf-8').write(content)
+print("Tamam!")
