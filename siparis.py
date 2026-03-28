@@ -143,6 +143,7 @@ class YeniSiparisDialog(QDialog):
         self.setWindowTitle("Yeni Siparis")
         self.setMinimumSize(640, 480)
         self.setStyleSheet(DIALOG_QSS)
+        self._izleyici = None
         self._build()
 
     def _build(self):
