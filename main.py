@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+import sys
+import os
+os.environ["PYTHONIOENCODING"] = "utf-8"
 import sys, os
 
 from PyQt5.QtWidgets import *
