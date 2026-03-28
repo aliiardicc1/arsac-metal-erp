@@ -172,28 +172,25 @@ class AnalizSayfasi(QWidget):
             bas = bugun.replace(month=1, day=1)
         return bas.strftime("%d.%m.%Y"), bugun.strftime("%d.%m.%Y")
 
-    def _tarih_filtreli_sorgula(self, sql, bas, bit, params=()):
-    try:
-        if bas:
-            # GROUP BY / ORDER BY / LIMIT oncesine tarih filtresi ekle
-            import re
-            m = re.search(r'\b(GROUP\s+BY|ORDER\s+BY|LIMIT)\b', sql, re.IGNORECASE)
-            if m:
-                pos = m.start()
-                sql = sql[:pos] + " AND tarih >= ? AND tarih <= ? " + sql[pos:]
-            else:
-                sql += " AND tarih >= ? AND tarih <= ?"
-            params = tuple(params) + (bas, bit)
+   def _tarih_filtreli_sorgula(self, sql, bas, bit, params=()):
+        try:
+            if bas:
+                import re
+                m = re.search(r'\b(GROUP\s+BY|ORDER\s+BY|LIMIT)\b', sql, re.IGNORECASE)
+                if m:
+                    pos = m.start()
+                    sql = sql[:pos] + " AND tarih >= ? AND tarih <= ? " + sql[pos:]
+                else:
+                    sql += " AND tarih >= ? AND tarih <= ?"
+                params = tuple(params) + (bas, bit)
             self.cursor.execute(sql, params)
             return self.cursor.fetchall()
         except Exception as e:
-            # tarih kolonu yoksa filtresiz dene
             try:
                 self.cursor.execute(sql.split(" AND tarih")[0], ())
                 return self.cursor.fetchall()
             except:
                 return []
-
     def yenile(self):
         try:
             bas, bit = self._donem_filtresi()
