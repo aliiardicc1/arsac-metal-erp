@@ -1128,28 +1128,6 @@ class SiparisSayfasi(QWidget):
         QTimer.singleShot(500, dlg._izlemeyi_baslat)
         dlg.exec_(); self.yenile()
 
-    def _detay(self, sid):
-        if not sid: return
-        dlg = SiparisDetayDialog(self.cursor, self.conn, sid, self.user_role, self)
-        dlg.exec_(); self.yenile()
-   lines = open('siparis.py', encoding='utf-8').readlines()
-
-# SiparisDetayDialog class'ini bul ve sil
-start = None
-for i, l in enumerate(lines):
-    if 'class SiparisDetayDialog' in l:
-        start = i
-        break
-
-if start is not None:
-    # class'i sil
-    lines = lines[:start]
-    print(f"Eski class silindi, {len(lines)} satir kaldi")
-else:
-    print("SiparisDetayDialog bulunamadi")
-
-# Yeni class'i ekle
-yeni_class = '''
 
 class SiparisDetayDialog(QDialog):
     """Siparis detay gorunumu."""
@@ -1161,114 +1139,56 @@ class SiparisDetayDialog(QDialog):
         self.sid = siparis_id
         self.user_role = user_role
         self.setWindowTitle("Siparis Detay")
-        self.setMinimumSize(900, 620)
-        self.setStyleSheet("""
-            QDialog { background: #f4f6f9; font-family: 'Segoe UI'; }
-            QLabel  { color: #2c3e50; }
-            QTableWidget { background: white; border: 1px solid #dcdde1;
-                border-radius: 8px; font-size: 13px; }
-            QHeaderView::section { background: #2c3e50; color: white;
-                padding: 8px; font-weight: bold; border: none; }
-            QTableWidget::item { padding: 6px; color: #2c3e50; }
-            QGroupBox { background: white; border: 1px solid #dcdde1;
-                border-radius: 8px; margin-top: 8px; padding: 10px; }
-            QGroupBox::title { color: #c0392b; font-weight: bold;
-                subcontrol-origin: margin; padding: 0 6px; }
-        """)
+        self.setMinimumSize(800, 500)
         self._build()
         self._yukle()
 
     def _build(self):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(16, 16, 16, 16)
-        lay.setSpacing(10)
-
         self.lbl_baslik = QLabel("Siparis Detay")
-        self.lbl_baslik.setStyleSheet("font-size:18px;font-weight:900;color:#2c3e50;")
+        self.lbl_baslik.setStyleSheet("font-size:16px;font-weight:bold;color:#2c3e50;")
         lay.addWidget(self.lbl_baslik)
-
-        gb_bilgi = QGroupBox("Siparis Bilgileri")
-        grid = QGridLayout(gb_bilgi)
-        grid.setSpacing(8)
-        self.lbl_fields = {}
-        alanlar = [
-            ("Siparis No", "sip_no"), ("Tarih", "tarih"),
-            ("Musteri", "musteri"), ("Yetkili", "yetkili"),
-            ("Durum", "durum"), ("Termin", "termin"),
-            ("Genel Toplam", "genel_toplam"), ("Odeme Sekli", "odeme_sekli"),
-        ]
-        for i, (lbl, key) in enumerate(alanlar):
-            r, c = divmod(i, 2)
-            ql = QLabel(lbl + ":")
-            ql.setStyleSheet("font-weight:bold;color:#7f8c8d;font-size:12px;")
-            qv = QLabel("-")
-            qv.setStyleSheet("color:#2c3e50;font-size:13px;")
-            grid.addWidget(ql, r, c*2)
-            grid.addWidget(qv, r, c*2+1)
-            self.lbl_fields[key] = qv
-        lay.addWidget(gb_bilgi)
-
-        gb_parca = QGroupBox("Parcalar")
-        pl = QVBoxLayout(gb_parca)
-        self.tbl_parca = QTableWidget(0, 6)
-        self.tbl_parca.setHorizontalHeaderLabels(["Parca Adi","Malzeme","En","Boy","Kalinlik","Adet"])
+        self.tbl_parca = QTableWidget(0, 5)
+        self.tbl_parca.setHorizontalHeaderLabels(["Parca Adi", "Parca Kodu", "Adet", "Kg", "Durum"])
         self.tbl_parca.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.tbl_parca.setSelectionBehavior(QTableWidget.SelectRows)
         self.tbl_parca.verticalHeader().setVisible(False)
         self.tbl_parca.horizontalHeader().setStretchLastSection(True)
-        self.tbl_parca.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        pl.addWidget(self.tbl_parca)
-        lay.addWidget(gb_parca)
-
-        btn_lay = QHBoxLayout()
-        btn_lay.addStretch()
-        btn_kapat = QPushButton("Kapat")
-        btn_kapat.setFixedHeight(36)
-        btn_kapat.setStyleSheet("background:#dcdde1;color:#2c3e50;border-radius:8px;padding:6px 24px;font-weight:bold;border:none;")
-        btn_kapat.clicked.connect(self.accept)
-        btn_lay.addWidget(btn_kapat)
-        lay.addLayout(btn_lay)
+        lay.addWidget(self.tbl_parca)
+        btn = QPushButton("Kapat")
+        btn.setFixedHeight(36)
+        btn.setStyleSheet("background:#dcdde1;color:#2c3e50;border-radius:8px;padding:6px 24px;font-weight:bold;border:none;")
+        btn.clicked.connect(self.accept)
+        lay.addWidget(btn)
 
     def _yukle(self):
         try:
             self.cursor.execute(
-                "SELECT sip_no,tarih,musteri,yetkili,durum,termin,genel_toplam,odeme_sekli,notlar FROM siparisler WHERE id=?",
+                "SELECT sip_no,musteri,durum,tarih FROM siparisler WHERE id=?",
                 (self.sid,))
             row = self.cursor.fetchone()
-            if not row:
-                return
-            keys = ["sip_no","tarih","musteri","yetkili","durum","termin","genel_toplam","odeme_sekli","notlar"]
-            data = {k: row[i] for i, k in enumerate(keys)}
-            self.setWindowTitle("Siparis: {}".format(data.get("sip_no", "-")))
-            self.lbl_baslik.setText("{} | {}".format(data.get("sip_no","-"), data.get("musteri","-")))
-            for key, lbl in self.lbl_fields.items():
-                val = data.get(key, "-") or "-"
-                if key == "genel_toplam":
-                    try:
-                        val = "{:,.2f} TL".format(float(val))
-                    except:
-                        pass
-                lbl.setText(str(val))
+            if row:
+                self.setWindowTitle("Siparis: {}".format(row[0]))
+                self.lbl_baslik.setText("{} | {} | {} | {}".format(
+                    row[0] or "-", row[1] or "-", row[2] or "-", row[3] or "-"))
         except Exception as e:
-            print("Siparis detay bilgi hatasi:", e)
-
+            print("Detay baslik hatasi:", e)
         try:
             self.cursor.execute(
-                "SELECT parca_adi,malzeme,en,boy,kalinlik,adet FROM siparis_parcalari WHERE siparis_id=? ORDER BY id",
+                "SELECT p.parca_adi, p.parca_kodu, p.adet, p.birim_kg, p.durum "
+                "FROM parcalar p "
+                "JOIN isler i ON p.is_no=i.is_no "
+                "JOIN siparisler s ON i.sip_no=s.sip_no "
+                "WHERE s.id=? ORDER BY p.id",
                 (self.sid,))
             self.tbl_parca.setRowCount(0)
             for i, p in enumerate(self.cursor.fetchall()):
                 self.tbl_parca.insertRow(i)
                 self.tbl_parca.setRowHeight(i, 32)
-                for j in range(6):
+                for j in range(5):
                     val = p[j] if p[j] is not None else "-"
                     it = QTableWidgetItem(str(val))
                     it.setTextAlignment(Qt.AlignCenter)
                     self.tbl_parca.setItem(i, j, it)
         except Exception as e:
-            print("Siparis parca hatasi:", e)
-'''
-
-lines.append(yeni_class)
-open('siparis.py', 'w', encoding='utf-8').writelines(lines)
-print("Yeni class eklendi!")
+            print("Detay parca hatasi:", e)

@@ -172,7 +172,7 @@ class AnalizSayfasi(QWidget):
             bas = bugun.replace(month=1, day=1)
         return bas.strftime("%d.%m.%Y"), bugun.strftime("%d.%m.%Y")
 
-   def _tarih_filtreli_sorgula(self, sql, bas, bit, params=()):
+    def _tarih_filtreli_sorgula(self, sql, bas, bit, params=()):
         try:
             if bas:
                 import re

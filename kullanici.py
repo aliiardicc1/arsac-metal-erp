@@ -1,7 +1,7 @@
-"""
-Arsac Metal ERP — Kullanıcı Yönetim Sistemi
-Bulut modu: API üzerinden giriş doğrulama.
-Lokal modu: SQLite üzerinden giriş doğrulama.
+﻿"""
+Arsac Metal ERP â€” KullanÄ±cÄ± YÃ¶netim Sistemi
+Bulut modu: API Ã¼zerinden giriÅŸ doÄŸrulama.
+Lokal modu: SQLite Ã¼zerinden giriÅŸ doÄŸrulama.
 """
 import hashlib
 from PyQt5.QtWidgets import *
@@ -13,7 +13,7 @@ try:
 except:
     def log_yaz(c, n, i, d=""): pass
 
-# Bulut modu kontrolü
+# Bulut modu kontrolÃ¼
 import json, os, sys
 def _bulut_modu():
     try:
@@ -36,7 +36,7 @@ def kullanici_dogrula(cursor, kullanici_adi, sifre):
     """
     Bulut modunda API'ye istek atar.
     Lokal modunda SQLite sorgular.
-    Döner: (rol, ad_soyad) veya None
+    DÃ¶ner: (rol, ad_soyad) veya None
     """
     if BULUT_MODU:
         try:
@@ -45,7 +45,7 @@ def kullanici_dogrula(cursor, kullanici_adi, sifre):
             if sonuc and sonuc.get("token"):
                 return sonuc.get("rol", "personel"), sonuc.get("ad_soyad", "")
         except Exception as e:
-            print(f"[Bulut] Giriş hatası: {e}")
+            print(f"[Bulut] GiriÅŸ hatasÄ±: {e}")
         return None
     else:
         try:
@@ -57,13 +57,13 @@ def kullanici_dogrula(cursor, kullanici_adi, sifre):
             if row and row[2] == 1:
                 return row[0], row[1]
         except Exception as e:
-            print(f"Doğrulama hatası: {e}")
+            print(f"DoÄŸrulama hatasÄ±: {e}")
         return None
 
 
 def varsayilan_admin_olustur(cursor, conn):
     if BULUT_MODU:
-        return  # API tarafında zaten oluşturuldu
+        return  # API tarafÄ±nda zaten oluÅŸturuldu
     try:
         cursor.execute("UPDATE kullanicilar SET rol='yonetici' WHERE rol='admin'")
         conn.commit()
@@ -78,17 +78,17 @@ def varsayilan_admin_olustur(cursor, conn):
         print(f"Varsayilan yonetici hatasi: {e}")
 
 
-# ─────────────────────────────────────────────
-#  GİRİŞ EKRANI
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+#  GÄ°RÄ°Å EKRANI
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class GirisEkrani(QDialog):
     def __init__(self, cursor, conn):
         super().__init__()
         self.cursor = cursor
         self.conn   = conn
         self.sonuc  = None
-        self._sifre = ""  # main.py'de token almak için
-        self.setWindowTitle("ARSAC METAL ERP — Giriş")
+        self._sifre = ""  # main.py'de token almak iÃ§in
+        self.setWindowTitle("ARSAC METAL ERP â€” GiriÅŸ")
         self.setFixedSize(420, 520)
         self.setWindowFlags(Qt.Window | Qt.WindowCloseButtonHint)
         self.setStyleSheet("""
@@ -125,7 +125,7 @@ class GirisEkrani(QDialog):
         lbl_logo.setStyleSheet("font-size:28px;font-weight:900;color:#c0392b;letter-spacing:2px;")
         lay.addWidget(lbl_logo)
 
-        lbl_alt = QLabel("ERP Yönetim Sistemi")
+        lbl_alt = QLabel("ERP YÃ¶netim Sistemi")
         lbl_alt.setAlignment(Qt.AlignCenter)
         lbl_alt.setStyleSheet("font-size:13px;color:#7f8c8d;margin-bottom:30px;")
         lay.addWidget(lbl_alt)
@@ -139,35 +139,35 @@ class GirisEkrani(QDialog):
         lay.addWidget(self.lbl_hata)
         lay.addSpacing(10)
 
-        lbl_k = QLabel("Kullanıcı Adı")
+        lbl_k = QLabel("KullanÄ±cÄ± AdÄ±")
         lbl_k.setStyleSheet("font-size:12px;font-weight:bold;color:#7f8c8d;margin-bottom:4px;")
         lay.addWidget(lbl_k)
         self.txt_kullanici = QLineEdit()
-        self.txt_kullanici.setPlaceholderText("Kullanıcı adınızı girin")
+        self.txt_kullanici.setPlaceholderText("KullanÄ±cÄ± adÄ±nÄ±zÄ± girin")
         self.txt_kullanici.setFixedHeight(46)
         lay.addWidget(self.txt_kullanici)
         lay.addSpacing(16)
 
-        lbl_s = QLabel("Şifre")
+        lbl_s = QLabel("Åifre")
         lbl_s.setStyleSheet("font-size:12px;font-weight:bold;color:#7f8c8d;margin-bottom:4px;")
         lay.addWidget(lbl_s)
         self.txt_sifre = QLineEdit()
-        self.txt_sifre.setPlaceholderText("Şifrenizi girin")
+        self.txt_sifre.setPlaceholderText("Åifrenizi girin")
         self.txt_sifre.setEchoMode(QLineEdit.Password)
         self.txt_sifre.setFixedHeight(46)
         self.txt_sifre.returnPressed.connect(self.giris_yap)
         lay.addWidget(self.txt_sifre)
         lay.addSpacing(24)
 
-        self.btn_giris = QPushButton("GİRİŞ YAP")
+        self.btn_giris = QPushButton("GÄ°RÄ°Å YAP")
         self.btn_giris.setObjectName("GirisBtn")
         self.btn_giris.setFixedHeight(50)
         self.btn_giris.clicked.connect(self.giris_yap)
         lay.addWidget(self.btn_giris)
         lay.addStretch()
 
-        mod_etiket = "☁ Bulut Modu" if BULUT_MODU else "💾 Lokal Mod"
-        lbl_bilgi = QLabel(f"v1.0 © 2024 Arsac Metal  •  {mod_etiket}")
+        mod_etiket = "â˜ Bulut Modu" if BULUT_MODU else "ğŸ’¾ Lokal Mod"
+        lbl_bilgi = QLabel(f"v1.0 Â© 2024 Arsac Metal  â€¢  {mod_etiket}")
         lbl_bilgi.setAlignment(Qt.AlignCenter)
         lbl_bilgi.setStyleSheet("font-size:11px;color:#bdc3c7;")
         lay.addWidget(lbl_bilgi)
@@ -179,11 +179,11 @@ class GirisEkrani(QDialog):
         sifre     = self.txt_sifre.text()
 
         if not kullanici or not sifre:
-            self._hata("Kullanıcı adı ve şifre boş bırakılamaz!")
+            self._hata("KullanÄ±cÄ± adÄ± ve ÅŸifre boÅŸ bÄ±rakÄ±lamaz!")
             return
 
         self.btn_giris.setEnabled(False)
-        self.btn_giris.setText("Giriş yapılıyor...")
+        self.btn_giris.setText("GiriÅŸ yapÄ±lÄ±yor...")
 
         sonuc = kullanici_dogrula(self.cursor, kullanici, sifre)
         if sonuc:
@@ -196,20 +196,20 @@ class GirisEkrani(QDialog):
                 pass
             self.accept()
         else:
-            self._hata("Kullanıcı adı veya şifre hatalı!")
+            self._hata("KullanÄ±cÄ± adÄ± veya ÅŸifre hatalÄ±!")
             self.txt_sifre.clear()
             self.txt_sifre.setFocus()
             self.btn_giris.setEnabled(True)
-            self.btn_giris.setText("GİRİŞ YAP")
+            self.btn_giris.setText("GÄ°RÄ°Å YAP")
 
     def _hata(self, mesaj):
-        self.lbl_hata.setText(f"⚠️  {mesaj}")
+        self.lbl_hata.setText(f"âš ï¸  {mesaj}")
         self.lbl_hata.show()
 
 
-# ─────────────────────────────────────────────
-#  YENİ KULLANICI EKLE
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+#  YENÄ° KULLANICI EKLE
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class KullaniciEkleDialog(QDialog):
     def __init__(self, cursor, conn, parent=None):
         super().__init__(parent)
@@ -306,9 +306,9 @@ class KullaniciEkleDialog(QDialog):
                 QMessageBox.critical(self, "Hata", str(e))
 
 
-# ─────────────────────────────────────────────
-#  KULLANICI YÖNETİMİ DİALOGU
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+#  KULLANICI YÃ–NETÄ°MÄ° DÄ°ALOGU
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 class KullaniciYonetimiDialog(QDialog):
     def __init__(self, cursor, conn, parent=None):
         super().__init__(parent)
@@ -331,7 +331,7 @@ class KullaniciYonetimiDialog(QDialog):
         main.setContentsMargins(16, 16, 16, 16)
         main.setSpacing(12)
 
-        # Sol — kullanici listesi
+        # Sol â€” kullanici listesi
         sol = QVBoxLayout()
         baslik = QLabel("Kullanicilar")
         baslik.setStyleSheet("font-size:15px;font-weight:bold;color:#2c3e50;")
@@ -360,9 +360,9 @@ class KullaniciYonetimiDialog(QDialog):
         sol.addLayout(btn_lay)
         main.addLayout(sol, 2)
 
-        # Sağ — izin yönetimi
+        # SaÄŸ â€” izin yÃ¶netimi
         sag = QVBoxLayout()
-        self.lbl_izin_baslik = QLabel("Izin Duzenle — once kullanici secin")
+        self.lbl_izin_baslik = QLabel("Izin Duzenle â€” once kullanici secin")
         self.lbl_izin_baslik.setStyleSheet("font-size:14px;font-weight:bold;color:#2c3e50;")
         sag.addWidget(self.lbl_izin_baslik)
 
@@ -415,7 +415,7 @@ class KullaniciYonetimiDialog(QDialog):
                 from database_bulut import API_URL, _token
                 import urllib.request, json
                 req = urllib.request.Request(
-                    API_URL + "/kullanicilar_hepsi",
+                    API_URL + "/kullanicilar",
                     headers={"Authorization": "Bearer " + (_token or "")}
                 )
                 with urllib.request.urlopen(req, timeout=10) as r:
@@ -545,7 +545,7 @@ class KullaniciYonetimiDialog(QDialog):
         try:
             if BULUT_MODU:
                 from database_bulut import _get, _post, ROL_VARSAYILAN_IZIN
-                kullanicilar = _get("/kullanicilar_hepsi")
+                kullanicilar = _get("/kullanicilar")
                 rol = next((k["rol"] for k in kullanicilar if k["kullanici_adi"] == self.secili_kullanici), "personel")
             else:
                 self.cursor.execute("SELECT rol FROM kullanicilar WHERE kullanici_adi=?", (self.secili_kullanici,))
@@ -690,5 +690,6 @@ class KullaniciYonetimiDialog(QDialog):
             if self.secili_kullanici == kadi:
                 self.secili_kullanici = None
                 self.izin_tablo.setEnabled(False)
-                self.lbl_izin_baslik.setText("Izin Duzenle — once kullanici secin")
+                self.lbl_izin_baslik.setText("Izin Duzenle â€” once kullanici secin")
             self.yenile()
+
