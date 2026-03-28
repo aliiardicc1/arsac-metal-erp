@@ -173,11 +173,17 @@ class AnalizSayfasi(QWidget):
         return bas.strftime("%d.%m.%Y"), bugun.strftime("%d.%m.%Y")
 
     def _tarih_filtreli_sorgula(self, sql, bas, bit, params=()):
-        """Tarih filtresi uygulayarak sorgu calistir."""
-        try:
-            if bas:
+    try:
+        if bas:
+            # GROUP BY / ORDER BY / LIMIT oncesine tarih filtresi ekle
+            import re
+            m = re.search(r'\b(GROUP\s+BY|ORDER\s+BY|LIMIT)\b', sql, re.IGNORECASE)
+            if m:
+                pos = m.start()
+                sql = sql[:pos] + " AND tarih >= ? AND tarih <= ? " + sql[pos:]
+            else:
                 sql += " AND tarih >= ? AND tarih <= ?"
-                params = tuple(params) + (bas, bit)
+            params = tuple(params) + (bas, bit)
             self.cursor.execute(sql, params)
             return self.cursor.fetchall()
         except Exception as e:
